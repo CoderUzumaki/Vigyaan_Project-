@@ -1,0 +1,49 @@
+// contracts/api-routes.ts
+// ALL REST endpoints — Team A calls these, Team B implements them
+
+// Auth
+POST   /api/auth/register          body: { email, password }              → { token, user }
+POST   /api/auth/login             body: { email, password }              → { token, user }
+GET    /api/auth/me                header: Authorization: Bearer <jwt>    → { id, email, did, role, kycStatus, kycVerified }
+
+// Location (called by React Native app every 30s)
+POST   /api/location/ping          body: { lat, lng, accuracy }           → { ok, breach: null | { zoneId, zoneName, severity } }
+
+// SOS
+POST   /api/sos/confirm            body: { sosType, intentMethod, clientTimestamp, pin? } → { ok, incidentId }
+POST   /api/sos/cancel             body: { incidentId? }                  → { ok }
+
+// Zones (GeoJSON)
+GET    /api/zones                  —                                       → GeoJSON FeatureCollection
+POST   /api/zones                  body: { name, severity, boundary }     → { ok, zoneId }  [admin only]
+PUT    /api/zones/:id              body: { name?, severity?, active? }    → { ok }           [admin only]
+DELETE /api/zones/:id              —                                       → { ok }           [admin only]
+
+// Tourist history (mobile app)
+GET    /api/tourist/history        —                                       → { sos: [...], breaches: [...] }
+GET    /api/tourist/profile        —                                       → { id, did, kycStatus, consentFlags }
+
+// KYC
+POST   /api/kyc/submit             multipart: { passportPhoto, selfie }   → { ok, submissionId }
+GET    /api/kyc/status             —                                       → { kycStatus, kycVerified }
+GET    /api/kyc/pending            —   [admin only]                        → [ submission... ]
+POST   /api/kyc/review             body: { submissionId, decision }       → { ok }  [admin only]
+
+// Admin
+GET    /api/admin/tourists         —                                       → [ tourist... ]  [admin only]
+GET    /api/admin/incidents        query: { status?, from?, to? }         → [ incident... ] [admin only]
+POST   /api/admin/dispatch         body: { incidentId, responderId, responderType } → { ok, dispatchId }
+POST   /api/admin/resolve          body: { incidentId, outcome }          → { ok }
+
+// Services portal
+GET    /api/services/incident/:id  query: { consentVerified }             → incident record [insurance only]
+GET    /api/services/analytics     query: { from?, to? }                  → aggregate stats [services only]
+POST   /api/services/consent       body: { touristId, granted }           → { ok }
+
+// PIN (stored hashed — used for covert SOS)
+POST   /api/tourist/set-pin        body: { pin }                          → { ok }
+
+I don't neeed hardcoded values try to give hardcoded values as output when there's no data 
+And that harcoded values should have some names of fields like no_name_avaialable or no_data or any other name
+Also ensure to make docs after creating the application
+Add as much modularity as possible
