@@ -1,0 +1,53 @@
+{
+  "name": "safetourism-org2",
+  "version": "1.0.0",
+  "client": {
+    "organization": "Org2MSP"
+  },
+  "organizations": {
+    "Org2MSP": {
+      "mspid": "Org2MSP",
+      "peers": [
+        "peer0.org2.example.com"
+      ],
+      "certificateAuthorities": [
+        "ca.org2.example.com"
+      ]
+    }
+  },
+  "peers": {
+    "peer0.org2.example.com": {
+      "url": "grpcs://localhost:9051",
+      "tlsCACerts": {
+        "path": "__TLS_CA_CERT__"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.org2.example.com",
+        "hostnameOverride": "peer0.org2.example.com"
+      }
+    },
+    "certificateAuthorities": {
+      "tlsCACerts": {
+        "path": "/tmp/fabric-samples/test-network/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt"
+      }
+    }
+  },
+  "certificateAuthorities": {
+    "ca.org2.example.com": {
+      "url": "https://localhost:8054",
+      "caName": "ca-org2",
+      "tlsCACerts": {
+        "path": "__CA_CERT__"
+      },
+      "httpOptions": {
+        "verify": false
+      }
+    },
+    "certificateAuthorities": {
+      "url": "https://localhost:8054",
+      "tlsCACerts": {
+        "path": "/tmp/fabric-samples/test-network/organizations/peerOrganizations/org2.example.com/ca/ca.org2.example.com-cert.pem"
+      }
+    }
+  }
+}

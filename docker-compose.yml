@@ -1,0 +1,55 @@
+version: '3.8'
+
+###############################################################################
+# Tourist Safety System — Docker Compose
+# Provides: PostGIS-enabled PostgreSQL, Redis, and Adminer (DB UI).
+# The Hyperledger Fabric network is managed separately via fabric-network/.
+###############################################################################
+
+services:
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: tourist-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: safetourism
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: devpassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d safetourism"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: safety-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer
+    container_name: tourist-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

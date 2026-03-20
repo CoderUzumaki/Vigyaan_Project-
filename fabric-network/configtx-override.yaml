@@ -1,0 +1,53 @@
+# configtx-override.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Organisation MSP ID Mapping
+#
+# fabric-samples uses generic MSP IDs (Org1MSP, Org2MSP, Org3MSP).
+# This file documents the mapping to our Tourist Safety System domain names.
+# The actual MSP IDs are NOT changed — this is a reference document.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ┌──────────┬─────────────────────┬─────────────────────────────────┬───────┐
+# │ MSP ID   │ System Role         │ Peer Address                    │ Port  │
+# ├──────────┼─────────────────────┼─────────────────────────────────┼───────┤
+# │ Org1MSP  │ TourismAuthority    │ peer0.org1.example.com          │ 7051  │
+# │ Org2MSP  │ EmergencyServices   │ peer0.org2.example.com          │ 9051  │
+# │ Org3MSP  │ Insurance           │ peer0.org3.example.com          │ 11051 │
+# └──────────┴─────────────────────┴─────────────────────────────────┴───────┘
+
+# ┌──────────┬─────────────────────┬──────────┬──────────────────────────────┐
+# │ MSP ID   │ CA Name             │ CA Port  │ CouchDB Port                 │
+# ├──────────┼─────────────────────┼──────────┼──────────────────────────────┤
+# │ Org1MSP  │ ca-org1             │ 7054     │ 5984                         │
+# │ Org2MSP  │ ca-org2             │ 8054     │ 7984                         │
+# │ Org3MSP  │ ca-org3             │ 11054    │ 9984                         │
+# └──────────┴─────────────────────┴──────────┴──────────────────────────────┘
+
+# ── Responsibilities ─────────────────────────────────────────────────────────
+#
+# TourismAuthority (Org1MSP):
+#   - Primary endorser for tourist registration, SOS events, location pings
+#   - Manages tourist DID records on the ledger
+#   - Anchor peer for the safetychannel
+#
+# EmergencyServices (Org2MSP):
+#   - Endorses incident dispatch and resolution transactions
+#   - Receives SOS alerts and zone breach notifications
+#   - Secondary endorser for safety-critical chaincode functions
+#
+# Insurance (Org3MSP):
+#   - Read-only access to incident records (with tourist consent)
+#   - Endorses consent-gated data sharing transactions
+#   - Cannot endorse SOS or dispatch transactions alone
+#
+# ── Endorsement Policy ──────────────────────────────────────────────────────
+#
+# Default policy (majority): at least 2 of 3 orgs must endorse.
+# Safety-critical functions (SOS, dispatch): Org1 AND Org2 required.
+# Consent-gated reads (insurance): Org1 AND Org3 required.
+#
+# ── Channel ──────────────────────────────────────────────────────────────────
+#
+# Channel Name: safetychannel
+# Orderer:      orderer.example.com:7050 (RAFT, single node in test-network)
+# Block Config:  default fabric-samples test-network settings
