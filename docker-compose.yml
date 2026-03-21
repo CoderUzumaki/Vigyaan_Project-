@@ -1,55 +1,98 @@
-version: '3.8'
-
 ###############################################################################
 # Tourist Safety System — Docker Compose
-# Provides: PostGIS-enabled PostgreSQL, Redis, and Adminer (DB UI).
-# The Hyperledger Fabric network is managed separately via fabric-network/.
+#
+# Services:
+#   postgres  — PostgreSQL 15 (port 5432)  uses postgres:15 (already local)
+#   redis     — Redis 7 Alpine  (port 6379) shared with hyperledger.sh
+#   adminer   — Web DB UI        (port 8080)
+#
+# Notes:
+#   - Hyperledger Fabric is managed separately via scripts/hyperledger.sh
+#   - pull_policy: never — all images must be pulled beforehand (saves bandwidth)
+#   - Memory limits keep dev machine stable during full-stack development
 ###############################################################################
 
 services:
+
+  # ── PostgreSQL 15 ──────────────────────────────────────────────────────────
   postgres:
-    image: postgis/postgis:15-3.3
+    image: postgres:15
+    pull_policy: never                  # image already present locally
     container_name: tourist-postgres
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: safetourism
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB:       tourist_safety
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      # Tune shared_buffers and work_mem for a dev workload
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    command: >
+      postgres
+        -c shared_buffers=128MB
+        -c work_mem=4MB
+        -c maintenance_work_mem=64MB
+        -c max_connections=50
+        -c log_min_duration_statement=1000
+        -c synchronous_commit=off
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d safetourism"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tourist_safety"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
+  # ── Redis 7 (shared with hyperledger.sh worker) ────────────────────────────
   redis:
     image: redis:7-alpine
+    pull_policy: never
     container_name: safety-redis
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+        --save ""
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
+      interval: 5s
+      timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 160M
 
+  # ── Adminer (DB web UI) ────────────────────────────────────────────────────
   adminer:
     image: adminer
+    pull_policy: never
     container_name: tourist-adminer
     ports:
       - "8080:8080"
     environment:
       ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: dracula
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
 volumes:
   postgres_data:
+    name: tourist_safety_pgdata     # explicit name to avoid project-prefix collision

@@ -3,7 +3,7 @@
 # hyperledger.sh — Start the entire blockchain stack
 #
 # Starts (in order):
-#   1. Redis (via Docker)
+#   1. Redis (via Docker — skipped if already running)
 #   2. Hyperledger Fabric network (3 orgs, CouchDB, RAFT)
 #   3. Extracts certs into connection profiles
 #   4. Optionally starts the BullMQ worker
@@ -19,6 +19,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 FABRIC_NETWORK_DIR="${PROJECT_DIR}/fabric-network"
+
+# ── Load .env.local so FABRIC_SAMPLES_PATH and DATABASE_URL are available ───
+if [ -f "${PROJECT_DIR}/.env.local" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${PROJECT_DIR}/.env.local"
+  set +a
+fi
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 START_WORKER=true
@@ -269,14 +277,17 @@ start_all() {
       warn "Stopped existing worker (PID: ${WORKER_PID})"
     fi
 
-    # Set environment
-    export REDIS_URL="redis://localhost:6379"
-    export DATABASE_URL="${DATABASE_URL:-postgresql://admin:devpassword@localhost:5432/safetourism}"
+    # Set environment (prefer values already sourced from .env.local)
+    export REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+    export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/tourist_safety}"
 
-    if [ -d "${PROJECT_DIR}/../fabric-samples" ]; then
-      export FABRIC_SAMPLES_PATH="$(cd "${PROJECT_DIR}/../fabric-samples" && pwd)"
-    elif [ -d "/tmp/fabric-samples" ]; then
-      export FABRIC_SAMPLES_PATH="/tmp/fabric-samples"
+    # Resolve FABRIC_SAMPLES_PATH if not already set by .env.local
+    if [ -z "${FABRIC_SAMPLES_PATH:-}" ]; then
+      if [ -d "${PROJECT_DIR}/../fabric-samples" ]; then
+        export FABRIC_SAMPLES_PATH="$(cd "${PROJECT_DIR}/../fabric-samples" && pwd)"
+      elif [ -d "/tmp/fabric-samples" ]; then
+        export FABRIC_SAMPLES_PATH="/tmp/fabric-samples"
+      fi
     fi
 
     # Start worker in background
