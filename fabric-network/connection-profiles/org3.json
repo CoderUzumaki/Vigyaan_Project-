@@ -28,7 +28,7 @@
     },
     "certificateAuthorities": {
       "tlsCACerts": {
-        "path": "/tmp/fabric-samples/test-network/organizations/peerOrganizations/org3.example.com/peers/peer0.org3.example.com/tls/ca.crt"
+        "path": "/home/abhinav/projects/fabric-samples/test-network/organizations/peerOrganizations/org3.example.com/peers/peer0.org3.example.com/tls/ca.crt"
       }
     }
   },
@@ -46,7 +46,7 @@
     "certificateAuthorities": {
       "url": "https://localhost:11054",
       "tlsCACerts": {
-        "path": "/tmp/fabric-samples/test-network/organizations/peerOrganizations/org3.example.com/ca/ca.org3.example.com-cert.pem"
+        "path": "/home/abhinav/projects/fabric-samples/test-network/organizations/peerOrganizations/org3.example.com/ca/ca.org3.example.com-cert.pem"
       }
     }
   }

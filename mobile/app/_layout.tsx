@@ -23,6 +23,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -46,7 +48,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
 
-  // Check stored token on app start
+  // Check stored token on app start + register push notifications
   useEffect(() => {
     (async () => {
       try {
@@ -61,6 +63,36 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     })();
+
+    // ── Push notification registration ────────────────────────────────
+    (async () => {
+      try {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status === 'granted') {
+          const pushToken = await Notifications.getExpoPushTokenAsync();
+          // TODO: Replace mock with real POST /api/tourist/register-push
+          await api.post('/api/tourist/register-push', { pushToken: pushToken.data });
+        }
+      } catch (err) {
+        console.warn('[Push] Registration failed:', err);
+      }
+    })();
+
+    // ── Background notification tap handler ────────────────────────────
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data;
+        if (data?.type === 'sos_confirmed') {
+          router.push('/(app)/sos');
+        } else if (data?.type === 'breach_warning') {
+          router.push('/(app)/map');
+        }
+      },
+    );
+
+    return () => {
+      responseSubscription.remove();
+    };
   }, []);
 
   // Auth guard — redirect based on auth state

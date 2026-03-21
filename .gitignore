@@ -45,3 +45,5 @@ coverage/
 # Typescript
 *.tsbuildinfo
 next-env.d.ts
+
+chaincode/safetychaincode/vendor

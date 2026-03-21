@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Live Map Screen — Location tracking, geofence overlays, breach warnings
-// TODO: Connect to real location API and socket.io for live updates
+// Uses react-native-maps (MapView, Polygon, Marker, Circle)
+// Uses expo-location for continuous background location tracking
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -13,28 +14,18 @@ import {
   Platform,
   Modal,
   Dimensions,
+  StyleSheet,
 } from 'react-native';
-import MapView, { Polygon, Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Polygon, Marker, Circle, PROVIDER_GOOGLE } from '../../components/MapComponents';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import { LinearGradient } from 'expo-linear-gradient';
 import api from '../../lib/api';
-import type { BreachResult } from '../../types';
+import type { BreachResult, ZoneFeature, HeatmapZone } from '../../types';
+import { colors, darkMapStyle } from '../../constants/theme';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-
-interface ZoneFeature {
-  type: string;
-  properties: { id: string; name: string; severity: string; active: boolean };
-  geometry: { type: string; coordinates: number[][][] };
-}
-
-interface HeatmapZone {
-  zoneId: string;
-  zoneName: string;
-  incidentCount: number;
-  centroid: { lat: number; lng: number };
-}
+const { width: SCREEN_W } = Dimensions.get('window');
 
 const severityColors: Record<string, { fill: string; stroke: string }> = {
   green: { fill: 'rgba(29,158,117,0.15)', stroke: '#1D9E75' },
@@ -44,7 +35,7 @@ const severityColors: Record<string, { fill: string; stroke: string }> = {
 
 const INITIAL_REGION = {
   latitude: 28.6139,
-  longitude: 77.209,
+  longitude: 77.2090,
   latitudeDelta: 0.05,
   longitudeDelta: 0.05,
 };
@@ -76,7 +67,7 @@ export default function MapScreen() {
         setLocationPermission(true);
 
         // Also request background permissions
-        // TODO: Handle background location in production
+        // TODO: Handle background location permissions in production
         await Location.requestBackgroundPermissionsAsync().catch(() => {});
 
         // Get initial position
@@ -109,7 +100,7 @@ export default function MapScreen() {
           setCurrentLocation(coords);
 
           try {
-            // TODO: Replace mock with real location ping
+            // TODO: Replace mock with real location ping API
             const { data } = await api.post('/api/location/ping', {
               lat: coords.latitude,
               lng: coords.longitude,
@@ -141,7 +132,7 @@ export default function MapScreen() {
   useEffect(() => {
     (async () => {
       try {
-        // TODO: Replace mock with real API
+        // TODO: Replace mock with real GET /api/zones
         const { data } = await api.get('/api/zones');
         setZones(data.features || []);
 
@@ -181,7 +172,7 @@ export default function MapScreen() {
       text2: `${breachData.distanceMeters}m outside permitted area`,
     });
 
-    // Auto-dismiss after 10s
+    // Auto-dismiss after 10s unless user taps a button
     if (breachTimerRef.current) clearTimeout(breachTimerRef.current);
     breachTimerRef.current = setTimeout(() => setShowBreachModal(false), 10000);
   }, []);
@@ -191,7 +182,7 @@ export default function MapScreen() {
   async function toggleHeatmap() {
     if (!heatmapEnabled) {
       try {
-        // TODO: Replace mock with real analytics API
+        // TODO: Replace mock with real GET /api/services/analytics
         const { data } = await api.get('/api/services/analytics');
         setHeatmapData(data.zones || []);
       } catch {
@@ -205,13 +196,15 @@ export default function MapScreen() {
   // ── Evacuation route ────────────────────────────────────────────────────
 
   function openEvacuationRoute() {
-    const greenZone = zones.find((z) => z.properties.severity === 'green');
+    // Fetch nearest zone centroid from active zones
+    const greenZone = zones.find((z) => z.properties.severity === 'green' && z.properties.active);
     if (!greenZone) return;
 
     const coords = greenZone.geometry.coordinates[0];
     const centLat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
     const centLng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
 
+    // Open platform maps
     const url =
       Platform.OS === 'ios'
         ? `maps://app?daddr=${centLat},${centLng}`
@@ -238,91 +231,49 @@ export default function MapScreen() {
     return { fill: 'rgba(29,158,117,0.2)', stroke: '#1D9E75' };
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────
+  // ── Render: Loading state ──────────────────────────────────────────────
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#14b8a6" />
-        <Text style={{ fontSize: 14, color: '#64748b', marginTop: 12 }}>Loading map...</Text>
+      <View style={s.centerContainer}>
+        <ActivityIndicator size="large" color={colors.primary.main} />
+        <Text style={s.loadingText}>Loading map...</Text>
       </View>
     );
   }
+
+  // ── Render: No permission ──────────────────────────────────────────────
 
   if (!locationPermission) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        <Ionicons name="location-outline" size={48} color="#64748b" />
-        <Text style={{ fontSize: 16, fontWeight: '600', color: '#e1e4ea', marginTop: 16 }}>
-          Location Permission Required
-        </Text>
-        <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 8 }}>
+      <View style={[s.centerContainer, { padding: 24 }]}>
+        <Ionicons name="location-outline" size={48} color={colors.text.muted} />
+        <Text style={s.noPermTitle}>Location Permission Required</Text>
+        <Text style={s.noPermDesc}>
           This app needs your location to show geofence zones and track your safety.
         </Text>
-        <TouchableOpacity
-          onPress={() => Linking.openSettings()}
-          style={{ backgroundColor: '#14b8a6', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 24, marginTop: 20 }}
-        >
-          <Text style={{ color: '#fff', fontWeight: '600' }}>Open Settings</Text>
+        <TouchableOpacity onPress={() => Linking.openSettings()} style={s.settingsBtn}>
+          <Text style={s.settingsBtnText}>Open Settings</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ── Render: Map ────────────────────────────────────────────────────────
+
   const zoneStatusColor = currentZone
-    ? (severityColors[currentZone.severity]?.stroke ?? '#64748b')
-    : '#ef4444';
+    ? (severityColors[currentZone.severity]?.stroke ?? colors.surface.high)
+    : colors.red;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0a0e1a' }}>
-      {/* Zone status banner */}
-      <View style={{
-        position: 'absolute',
-        top: 50,
-        left: 16,
-        right: 16,
-        zIndex: 10,
-        backgroundColor: '#0f1424ee',
-        borderRadius: 12,
-        padding: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderWidth: 1,
-        borderColor: zoneStatusColor + '40',
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-          <View style={{
-            width: 10, height: 10, borderRadius: 5,
-            backgroundColor: zoneStatusColor,
-            marginRight: 10,
-          }} />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: zoneStatusColor }} numberOfLines={1}>
-            {currentZone ? currentZone.name : 'Outside permitted zone'}
-          </Text>
-        </View>
-
-        {/* Heatmap toggle */}
-        <TouchableOpacity
-          onPress={toggleHeatmap}
-          style={{
-            backgroundColor: heatmapEnabled ? '#14b8a620' : '#1e2640',
-            padding: 8,
-            borderRadius: 8,
-            marginLeft: 8,
-          }}
-        >
-          <Ionicons name="analytics" size={18} color={heatmapEnabled ? '#14b8a6' : '#64748b'} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Map */}
+    <View style={s.container}>
+      {/* MapView with Google provider */}
       <MapView
         ref={mapRef}
-        style={{ flex: 1 }}
+        style={s.map}
         provider={PROVIDER_GOOGLE}
-        showsUserLocation
-        showsMyLocationButton
+        showsUserLocation={true}
+        showsMyLocationButton={true}
         initialRegion={
           currentLocation
             ? {
@@ -336,9 +287,9 @@ export default function MapScreen() {
         mapType="standard"
         customMapStyle={darkMapStyle}
       >
-        {/* Zone overlays */}
+        {/* Zone polygon overlays */}
         {zones.map((zone) => {
-          const colors = severityColors[zone.properties.severity] ?? severityColors.green;
+          const zoneColors = severityColors[zone.properties.severity] ?? severityColors.green;
           const coordinates = zone.geometry.coordinates[0].map((c) => ({
             latitude: c[1],
             longitude: c[0],
@@ -349,20 +300,14 @@ export default function MapScreen() {
             <View key={zone.properties.id}>
               <Polygon
                 coordinates={coordinates}
-                fillColor={colors.fill}
-                strokeColor={colors.stroke}
+                fillColor={zoneColors.fill}
+                strokeColor={zoneColors.stroke}
                 strokeWidth={2}
               />
+              {/* Zone name label at centroid */}
               <Marker coordinate={centroid} anchor={{ x: 0.5, y: 0.5 }}>
-                <View style={{
-                  backgroundColor: '#0f1424dd',
-                  borderRadius: 6,
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderWidth: 1,
-                  borderColor: colors.stroke + '60',
-                }}>
-                  <Text style={{ fontSize: 10, fontWeight: '600', color: colors.stroke }}>
+                <View style={[s.zoneLabel, { borderColor: zoneColors.stroke + '60' }]}>
+                  <Text style={[s.zoneLabelText, { color: zoneColors.stroke }]}>
                     {zone.properties.name}
                   </Text>
                 </View>
@@ -371,135 +316,286 @@ export default function MapScreen() {
           );
         })}
 
-        {/* Heatmap circles */}
+        {/* Heatmap circles when toggle enabled */}
         {heatmapEnabled &&
           heatmapData.map((hz) => {
-            const colors = getHeatmapColor(hz.incidentCount);
+            const hzColors = getHeatmapColor(hz.incidentCount);
             return (
               <Circle
                 key={hz.zoneId}
                 center={{ latitude: hz.centroid.lat, longitude: hz.centroid.lng }}
                 radius={Math.max(200, hz.incidentCount * 30)}
-                fillColor={colors.fill}
-                strokeColor={colors.stroke}
+                fillColor={hzColors.fill}
+                strokeColor={hzColors.stroke}
                 strokeWidth={1}
               />
             );
           })}
       </MapView>
 
-      {/* Evacuation route button (only when breach active) */}
-      {breach && (
-        <TouchableOpacity
-          onPress={openEvacuationRoute}
-          style={{
-            position: 'absolute',
-            bottom: 100,
-            left: 16,
-            right: 16,
-            backgroundColor: '#14b8a6',
-            borderRadius: 12,
-            padding: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            shadowColor: '#14b8a6',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 6,
-          }}
-        >
-          <Ionicons name="navigate" size={20} color="#fff" />
-          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15, marginLeft: 8 }}>
-            View Evacuation Route
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Breach warning modal */}
-      <Modal visible={showBreachModal} transparent animationType="slide">
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <View style={{
-            backgroundColor: '#0f1424',
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
-            padding: 24,
-            borderTopWidth: 3,
-            borderTopColor: severityColors[breach?.severity ?? 'amber']?.stroke ?? '#f59e0b',
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <Ionicons name="warning" size={24} color="#f59e0b" />
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#f59e0b', marginLeft: 8 }}>
-                Zone Breach Detected
+      {/* Floating Header UI overlay - Google Search Bar Style */}
+      <View style={s.headerOverlay}>
+        <View style={s.searchBarCard}>
+          <View style={s.zoneBannerLeft}>
+            <View style={[s.zoneDot, { backgroundColor: zoneStatusColor }]} />
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={s.zoneLabelTextTop}>CURRENT LOCATION</Text>
+              <Text style={[s.zoneName, { color: colors.text.primary }]} numberOfLines={1}>
+                {currentZone ? currentZone.name : 'Unknown Territory'}
               </Text>
             </View>
-
-            <Text style={{ fontSize: 15, color: '#e1e4ea', marginBottom: 6 }}>
-              You have left the{' '}
-              <Text style={{ fontWeight: '700' }}>{breach?.zoneName ?? 'permitted area'}</Text>
-            </Text>
-            <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
-              Please return to the permitted area immediately.
-              {breach?.distanceMeters ? ` You are ${breach.distanceMeters}m outside.` : ''}
-            </Text>
-
-            {/* Severity badge */}
-            {breach && (
-              <View style={{
-                backgroundColor: (severityColors[breach.severity]?.stroke ?? '#f59e0b') + '20',
-                borderRadius: 8,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                alignSelf: 'flex-start',
-                marginBottom: 16,
-              }}>
-                <Text style={{
-                  fontSize: 12,
-                  fontWeight: '600',
-                  color: severityColors[breach.severity]?.stroke ?? '#f59e0b',
-                  textTransform: 'uppercase',
-                }}>
-                  {breach.severity} severity
-                </Text>
-              </View>
-            )}
-
-            <TouchableOpacity
-              onPress={openEvacuationRoute}
-              style={{
-                backgroundColor: '#14b8a6',
-                borderRadius: 10,
-                padding: 14,
-                alignItems: 'center',
-                marginBottom: 10,
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>View directions back</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setShowBreachModal(false)}
-              style={{ padding: 10, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#64748b', fontSize: 13 }}>Dismiss</Text>
-            </TouchableOpacity>
           </View>
+
+          {/* Safety heatmap toggle button */}
+          <TouchableOpacity
+            onPress={toggleHeatmap}
+            activeOpacity={0.7}
+            style={[s.heatmapToggle, heatmapEnabled && s.heatmapToggleActive]}
+          >
+            <Ionicons
+              name="analytics"
+              size={22}
+              color={heatmapEnabled ? colors.primary.main : colors.text.secondary}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Evacuation route button — only visible when breach is active */}
+      {breach && (
+        <View style={s.evacBtnContainer}>
+           <TouchableOpacity onPress={openEvacuationRoute} activeOpacity={0.8} style={s.evacButtonSolid}>
+             <Ionicons name="navigate" size={20} color="#fff" />
+             <Text style={s.evacButtonText}>Directions</Text>
+           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Breach warning bottom sheet modal */}
+      <Modal visible={showBreachModal} transparent animationType="fade">
+        <View style={s.modalOverlay}>
+           <View style={s.breachSheetWrapper}>
+              <View 
+                style={[
+                  s.breachSheet,
+                  { borderTopColor: severityColors[breach?.severity ?? 'amber']?.stroke ?? colors.amber },
+                ]}
+              >
+                {/* Title */}
+                <View style={s.breachHeader}>
+                  <View style={s.warningIconGlow}>
+                    <Ionicons name="warning" size={28} color={colors.red} />
+                  </View>
+                  <Text style={s.breachTitle}>Zone Breach Detected</Text>
+                </View>
+
+                {/* Body */}
+                <Text style={s.breachBody}>
+                  You have left the{' '}
+                  <Text style={{ fontWeight: '800', color: colors.text.primary }}>{breach?.zoneName ?? 'permitted area'}</Text>
+                </Text>
+                <Text style={s.breachDesc}>
+                  Please return to the permitted area immediately.
+                  {breach?.distanceMeters ? ` You are ${breach.distanceMeters}m outside.` : ''}
+                </Text>
+
+                {/* Severity badge */}
+                {breach && (
+                  <View
+                    style={[
+                      s.severityBadge,
+                      {
+                        backgroundColor: (severityColors[breach.severity]?.stroke ?? colors.amber) + '15',
+                        borderColor: (severityColors[breach.severity]?.stroke ?? colors.amber) + '30',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        s.severityBadgeText,
+                        { color: severityColors[breach.severity]?.stroke ?? colors.amber },
+                      ]}
+                    >
+                      {breach.severity} severity
+                    </Text>
+                  </View>
+                )}
+
+                {/* Actions */}
+                <View style={s.breachActions}>
+                  <TouchableOpacity onPress={openEvacuationRoute} activeOpacity={0.8} style={s.directionsBtn}>
+                    <Ionicons name="navigate" size={18} color="#fff" />
+                    <Text style={s.directionsBtnText}>Directions</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowBreachModal(false);
+                      if (breachTimerRef.current) clearTimeout(breachTimerRef.current);
+                    }}
+                    style={s.dismissBtn}
+                  >
+                    <Text style={s.dismissBtnText}>Dismiss</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+           </View>
         </View>
       </Modal>
     </View>
   );
 }
 
-// ── Dark map style for Google Maps ────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────
 
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#0a0e1a' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0a0e1a' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#64748b' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1e2640' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#2d3a5c' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f1424' }] },
-  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#0f1424' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#1e2640' }] },
-];
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.surface.lowest },
+  centerContainer: {
+    flex: 1,
+    backgroundColor: colors.surface.lowest,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: { fontSize: 14, color: colors.text.muted, marginTop: 12 },
+  noPermTitle: { fontSize: 16, fontWeight: '600', color: colors.text.primary, marginTop: 16 },
+  noPermDesc: { fontSize: 13, color: colors.text.muted, textAlign: 'center', marginTop: 8 },
+  settingsBtn: {
+    backgroundColor: colors.primary.main,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginTop: 20,
+  },
+  settingsBtnText: { color: '#fff', fontWeight: '600' },
+
+  // Map
+  map: { flex: 1 },
+
+  // Floating Header
+  headerOverlay: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 16,
+    right: 16,
+    zIndex: 10,
+  },
+  searchBarCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  zoneBannerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  zoneDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  zoneLabelTextTop: { fontSize: 10, fontWeight: '700', color: colors.text.muted, letterSpacing: 0.5, marginBottom: 2 },
+  zoneName: { fontSize: 16, fontWeight: '600', letterSpacing: 0 },
+  heatmapToggle: {
+    padding: 8,
+    borderRadius: 8,
+    marginLeft: 12,
+  },
+  heatmapToggleActive: { backgroundColor: colors.primary.container },
+
+  // Zone map labels
+  zoneLabel: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  zoneLabelText: { fontSize: 12, fontWeight: '600', letterSpacing: 0 },
+
+  // Evacuation button
+  evacBtnContainer: {
+    position: 'absolute',
+    bottom: 110,
+    alignSelf: 'center',
+    zIndex: 20,
+  },
+  evacButtonSolid: {
+    backgroundColor: colors.primary.main,
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  evacButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 15, marginLeft: 8 },
+
+  // Breach modal
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  breachSheetWrapper: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 16,
+  },
+  breachSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    borderTopWidth: 4,
+  },
+  breachHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  warningIconGlow: {
+    padding: 8,
+    backgroundColor: '#fce8e6', // Google Red light
+    borderRadius: 12,
+  },
+  breachTitle: { fontSize: 20, fontWeight: '700', color: colors.red, marginLeft: 12 },
+  breachBody: { fontSize: 16, color: colors.text.primary, marginBottom: 8, lineHeight: 24 },
+  breachDesc: { fontSize: 14, color: colors.text.secondary, marginBottom: 20, lineHeight: 22 },
+  severityBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 24,
+  },
+  severityBadgeText: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  breachActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  directionsBtn: {
+    backgroundColor: colors.primary.main,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  directionsBtnText: { color: '#fff', fontWeight: '600', fontSize: 15, marginLeft: 6 },
+  dismissBtn: { padding: 14, alignItems: 'center', backgroundColor: colors.surface.low, borderRadius: 8, paddingHorizontal: 20 },
+  dismissBtnText: { color: colors.text.secondary, fontSize: 15, fontWeight: '600' },
+});

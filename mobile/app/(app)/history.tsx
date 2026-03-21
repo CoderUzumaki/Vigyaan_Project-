@@ -1,434 +1,382 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Incident History — Expandable SOS and breach event cards
-// TODO: Connect to real GET /api/tourist/history
+// Incident History — SOS events + geofence breaches with expandable details
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  StyleSheet,
+  Platform,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../lib/api';
+import type { SOSHistoryEvent, BreachHistoryEvent } from '../../types';
+import { colors, radii, spacing, sosTypeConfig, statusConfig } from '../../constants/theme';
 
-interface SOSEvent {
-  id: string;
-  sosType: string;
-  status: string;
-  intentMethod?: string;
-  lat: number;
-  lng: number;
-  createdAt: string;
-  fabricTxHash?: string | null;
-  kycVerifiedAtTime?: boolean;
-}
-
-interface BreachEvent {
-  id: string;
-  zoneName: string;
-  severity: string;
-  lat: number;
-  lng: number;
-  durationMinutes?: number;
-  createdAt: string;
-  fabricTxHash?: string | null;
-}
-
-const sosTypeConfig: Record<string, { icon: string; color: string; label: string }> = {
-  medical: { icon: 'medkit', color: '#3b82f6', label: 'Medical' },
-  fire: { icon: 'flame', color: '#f97316', label: 'Fire' },
-  police: { icon: 'shield-checkmark', color: '#1e3a5f', label: 'Police' },
-};
-
-const statusConfig: Record<string, { color: string; label: string }> = {
-  resolved: { color: '#22c55e', label: 'Responded' },
-  responded: { color: '#22c55e', label: 'Responded' },
-  false_alarm: { color: '#64748b', label: 'False Alarm' },
-  pending: { color: '#f59e0b', label: 'Pending' },
-  active: { color: '#ef4444', label: 'Active' },
-};
-
-const severityColors: Record<string, string> = {
-  green: '#22c55e',
-  amber: '#f59e0b',
-  red: '#ef4444',
-};
-
-function truncateTxHash(hash: string): string {
-  if (hash.length <= 20) return hash;
-  return hash.slice(0, 10) + '...' + hash.slice(-8);
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return (
-    d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
-    '  •  ' +
-    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-  );
+interface HistoryData {
+  sosEvents: SOSHistoryEvent[];
+  breachEvents: BreachHistoryEvent[];
 }
 
 export default function HistoryScreen() {
-  const [sosEvents, setSosEvents] = useState<SOSEvent[]>([]);
-  const [breachEvents, setBreachEvents] = useState<BreachEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [expandedSos, setExpandedSos] = useState<string | null>(null);
+  const [data, setData] = useState<HistoryData>({ sosEvents: [], breachEvents: [] });
+  const [expandedSOS, setExpandedSOS] = useState<string | null>(null);
   const [expandedBreach, setExpandedBreach] = useState<string | null>(null);
 
-  async function loadHistory() {
+  // ── Fetch history ───────────────────────────────────────────────────────
+
+  const fetchHistory = useCallback(async () => {
     try {
-      // TODO: Replace mock with real API
-      const { data } = await api.get('/api/tourist/history');
-      setSosEvents(data.sos || []);
-      setBreachEvents(data.breaches || []);
+      // TODO: Replace mock with real GET /api/tourist/history
+      const { data: result } = await api.get('/api/tourist/history');
+      setData({
+        sosEvents: result.sosEvents || [],
+        breachEvents: result.breachEvents || [],
+      });
     } catch {
-      console.warn('Failed to load history');
+      // silent
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    loadHistory();
+    fetchHistory();
   }, []);
+
+  function onRefresh() {
+    setRefreshing(true);
+    fetchHistory();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+
+  function truncateTxHash(hash: string | null | undefined): string {
+    if (!hash) return 'N/A';
+    if (hash.length <= 16) return hash;
+    return `${hash.slice(0, 8)}...${hash.slice(-8)}`;
+  }
+
+  function formatDate(dateStr: string): string {
+    const d = new Date(dateStr);
+    const day = d.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${day} ${months[d.getMonth()]} ${d.getFullYear()} • ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  }
+
+  function getSeverityColor(severity: string): string {
+    if (severity === 'red') return colors.red;
+    if (severity === 'amber') return colors.amber;
+    return colors.green;
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View style={s.centerContainer}>
+        <ActivityIndicator size="large" color={colors.primary.main} />
       </View>
     );
   }
 
+  const isEmpty = data.sosEvents.length === 0 && data.breachEvents.length === 0;
+
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#0a0e1a' }}
-      contentContainerStyle={{ padding: 20 }}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => {
-            setRefreshing(true);
-            loadHistory();
-          }}
-          tintColor="#14b8a6"
-        />
-      }
+      style={s.container}
+      contentContainerStyle={s.scrollContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary.main} />}
     >
       {/* Header */}
-      <View style={{ marginTop: 50, marginBottom: 24 }}>
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#e1e4ea' }}>📋 Incident History</Text>
-        <Text style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
-          Past SOS events and zone breaches
-        </Text>
-      </View>
+      <Text style={s.headerTitle}>📋 Incident History</Text>
+      <Text style={s.headerSubtitle}>Past SOS events and zone breaches</Text>
 
-      {/* ── SOS Events ─────────────────────────────────────────────────── */}
-      <Text
-        style={{
-          fontSize: 13,
-          fontWeight: '600',
-          color: '#94a3b8',
-          marginBottom: 12,
-          textTransform: 'uppercase',
-          letterSpacing: 1,
-        }}
-      >
-        SOS Events ({sosEvents.length})
-      </Text>
-
-      {sosEvents.length === 0 ? (
-        <View
-          style={{
-            backgroundColor: '#0f1424',
-            borderRadius: 12,
-            padding: 24,
-            marginBottom: 24,
-            alignItems: 'center',
-            borderWidth: 1,
-            borderColor: '#1e2640',
-          }}
-        >
-          <Ionicons name="checkmark-circle" size={32} color="#22c55e" />
-          <Text style={{ fontSize: 14, color: '#64748b', marginTop: 8 }}>
-            No SOS events — stay safe!
-          </Text>
+      {/* Empty state */}
+      {isEmpty && (
+        <View style={s.emptyState}>
+          <Ionicons name="checkmark-circle" size={48} color={colors.green + '60'} />
+          <Text style={s.emptyTitle}>No incidents recorded</Text>
+          <Text style={s.emptySubtitle}>Stay safe!</Text>
         </View>
-      ) : (
-        sosEvents.map((event) => {
-          const type = sosTypeConfig[event.sosType] || { icon: 'alert', color: '#64748b', label: event.sosType };
-          const status = statusConfig[event.status] || { color: '#64748b', label: event.status };
-          const isExpanded = expandedSos === event.id;
-
-          return (
-            <TouchableOpacity
-              key={event.id}
-              activeOpacity={0.8}
-              onPress={() => setExpandedSos(isExpanded ? null : event.id)}
-              style={{
-                backgroundColor: '#0f1424',
-                borderRadius: 12,
-                padding: 16,
-                marginBottom: 8,
-                borderWidth: 1,
-                borderColor: '#1e2640',
-                borderLeftWidth: 3,
-                borderLeftColor: type.color,
-              }}
-            >
-              {/* Header row */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name={type.icon as any} size={18} color={type.color} />
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: '#e1e4ea',
-                      marginLeft: 8,
-                    }}
-                  >
-                    {type.label}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View
-                    style={{
-                      backgroundColor: status.color + '20',
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                      borderRadius: 6,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        fontWeight: '600',
-                        color: status.color,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {status.label}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={16}
-                    color="#475569"
-                  />
-                </View>
-              </View>
-
-              {/* Date */}
-              <Text style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-                {formatDate(event.createdAt)}
-              </Text>
-
-              {/* TX hash */}
-              {event.fabricTxHash && (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 6,
-                  }}
-                >
-                  <Ionicons name="link" size={10} color="#475569" />
-                  <Text
-                    style={{
-                      fontSize: 10,
-                      color: '#475569',
-                      marginLeft: 4,
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {truncateTxHash(event.fabricTxHash)}
-                  </Text>
-                </View>
-              )}
-
-              {/* Expanded details */}
-              {isExpanded && (
-                <View
-                  style={{
-                    marginTop: 12,
-                    paddingTop: 12,
-                    borderTopWidth: 1,
-                    borderTopColor: '#1e2640',
-                  }}
-                >
-                  {event.fabricTxHash && (
-                    <View style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 10, color: '#64748b' }}>Full TX Hash</Text>
-                      <Text style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>
-                        {event.fabricTxHash}
-                      </Text>
-                    </View>
-                  )}
-                  {event.intentMethod && (
-                    <View style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 10, color: '#64748b' }}>Intent Method</Text>
-                      <Text style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize', marginTop: 2 }}>
-                        {event.intentMethod}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={{ marginBottom: 8 }}>
-                    <Text style={{ fontSize: 10, color: '#64748b' }}>KYC Verified at Time</Text>
-                    <Text style={{ fontSize: 11, color: event.kycVerifiedAtTime ? '#22c55e' : '#f59e0b', marginTop: 2 }}>
-                      {event.kycVerifiedAtTime ? 'Yes ✓' : 'No — pending'}
-                    </Text>
-                  </View>
-                  <View>
-                    <Text style={{ fontSize: 10, color: '#64748b' }}>Coordinates</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>
-                      {event.lat.toFixed(6)}, {event.lng.toFixed(6)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })
       )}
 
-      {/* ── Breach Events ──────────────────────────────────────────────── */}
-      <Text
-        style={{
-          fontSize: 13,
-          fontWeight: '600',
-          color: '#94a3b8',
-          marginBottom: 12,
-          marginTop: 16,
-          textTransform: 'uppercase',
-          letterSpacing: 1,
-        }}
-      >
-        Zone Breaches ({breachEvents.length})
-      </Text>
+      {/* SOS Events Section */}
+      {data.sosEvents.length > 0 && (
+        <View style={s.section}>
+          <Text style={s.sectionLabel}>SOS EVENTS ({data.sosEvents.length})</Text>
 
-      {breachEvents.length === 0 ? (
-        <View
-          style={{
-            backgroundColor: '#0f1424',
-            borderRadius: 12,
-            padding: 24,
-            marginBottom: 24,
-            alignItems: 'center',
-            borderWidth: 1,
-            borderColor: '#1e2640',
-          }}
-        >
-          <Ionicons name="shield-checkmark" size={32} color="#22c55e" />
-          <Text style={{ fontSize: 14, color: '#64748b', marginTop: 8 }}>No breaches recorded</Text>
-        </View>
-      ) : (
-        breachEvents.map((event) => {
-          const sevColor = severityColors[event.severity] || '#64748b';
-          const isExpanded = expandedBreach === event.id;
+          {data.sosEvents.map((event) => {
+            const config = sosTypeConfig[event.sosType] ?? sosTypeConfig.medical;
+            const status = statusConfig[event.status] ?? statusConfig.pending;
+            const expanded = expandedSOS === event.id;
 
-          return (
-            <TouchableOpacity
-              key={event.id}
-              activeOpacity={0.8}
-              onPress={() => setExpandedBreach(isExpanded ? null : event.id)}
-              style={{
-                backgroundColor: '#0f1424',
-                borderRadius: 12,
-                padding: 16,
-                marginBottom: 8,
-                borderWidth: 1,
-                borderColor: '#1e2640',
-                borderLeftWidth: 3,
-                borderLeftColor: sevColor,
-              }}
-            >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#e1e4ea', flex: 1 }}>
-                  {event.zoneName}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View
-                    style={{
-                      backgroundColor: sevColor + '20',
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                      borderRadius: 6,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        fontWeight: '600',
-                        color: sevColor,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {event.severity}
-                    </Text>
+            return (
+              <TouchableOpacity
+                key={event.id}
+                style={[s.card, { borderLeftColor: config.color }]}
+                activeOpacity={0.7}
+                onPress={() => setExpandedSOS(expanded ? null : event.id)}
+              >
+                {/* Header row */}
+                <View style={s.cardRow}>
+                  <View style={s.cardLeft}>
+                    <View style={[s.typeBadge, { backgroundColor: config.color + '15' }]}>
+                      <Ionicons name={config.icon as any} size={14} color={config.color} />
+                      <Text style={[s.typeBadgeText, { color: config.color }]}>{config.label}</Text>
+                    </View>
+                    <View style={[s.statusBadge, { backgroundColor: status.color + '15' }]}>
+                      <Text style={[s.statusBadgeText, { color: status.color }]}>{status.label}</Text>
+                    </View>
                   </View>
                   <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={16}
-                    color="#475569"
+                    name={expanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={colors.text.muted}
                   />
                 </View>
-              </View>
 
-              <Text style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-                {formatDate(event.createdAt)}
-              </Text>
-              {event.durationMinutes != null && (
-                <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                  Duration: {event.durationMinutes} min outside zone
-                </Text>
-              )}
+                {/* Date and TX hash */}
+                <Text style={s.cardDate}>{formatDate(event.createdAt)}</Text>
+                {event.fabricTxHash && (
+                  <Text style={s.txHash}>{truncateTxHash(event.fabricTxHash)}</Text>
+                )}
 
-              {event.fabricTxHash && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                  <Ionicons name="link" size={10} color="#475569" />
-                  <Text style={{ fontSize: 10, color: '#475569', marginLeft: 4, fontFamily: 'monospace' }}>
-                    {truncateTxHash(event.fabricTxHash)}
-                  </Text>
-                </View>
-              )}
+                {/* Expanded details */}
+                {expanded && (
+                  <View style={s.expandedSection}>
+                    <View style={s.separator} />
 
-              {isExpanded && (
-                <View
-                  style={{
-                    marginTop: 12,
-                    paddingTop: 12,
-                    borderTopWidth: 1,
-                    borderTopColor: '#1e2640',
-                  }}
-                >
-                  {event.fabricTxHash && (
-                    <View style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 10, color: '#64748b' }}>Full TX Hash</Text>
-                      <Text style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>
-                        {event.fabricTxHash}
+                    {event.fabricTxHash && (
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Full TX Hash:</Text>
+                        <Text style={s.detailValueMono}>{event.fabricTxHash}</Text>
+                      </View>
+                    )}
+
+                    {event.intentMethod && (
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Intent Method:</Text>
+                        <Text style={s.detailValue}>{event.intentMethod}</Text>
+                      </View>
+                    )}
+
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>KYC Verified at Time:</Text>
+                      <Text
+                        style={[
+                          s.detailValue,
+                          { color: event.kycVerifiedAtTime ? colors.green : colors.amber },
+                        ]}
+                      >
+                        {event.kycVerifiedAtTime ? 'Yes ✓' : 'No'}
                       </Text>
                     </View>
-                  )}
-                  {!event.fabricTxHash && (
-                    <View style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 10, color: '#64748b' }}>Blockchain Status</Text>
-                      <Text style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Not yet recorded</Text>
+
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>Coordinates:</Text>
+                      <Text style={s.detailValueMono}>
+                        {event.lat.toFixed(6)}, {event.lng.toFixed(6)}
+                      </Text>
                     </View>
-                  )}
-                  <View>
-                    <Text style={{ fontSize: 10, color: '#64748b' }}>Coordinates</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>
-                      {event.lat.toFixed(6)}, {event.lng.toFixed(6)}
-                    </Text>
                   </View>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
 
-      <View style={{ height: 20 }} />
+      {/* Breach Events Section */}
+      {data.breachEvents.length > 0 && (
+        <View style={s.section}>
+          <Text style={s.sectionLabel}>ZONE BREACHES ({data.breachEvents.length})</Text>
+
+          {data.breachEvents.map((event) => {
+            const sevColor = getSeverityColor(event.severity);
+            const expanded = expandedBreach === event.id;
+
+            return (
+              <TouchableOpacity
+                key={event.id}
+                style={[s.card, { borderLeftColor: sevColor }]}
+                activeOpacity={0.7}
+                onPress={() => setExpandedBreach(expanded ? null : event.id)}
+              >
+                {/* Header row */}
+                <View style={s.cardRow}>
+                  <View style={s.cardLeft}>
+                    <Text style={s.breachZoneName}>{event.zoneName}</Text>
+                    <View style={[s.severityBadge, { backgroundColor: sevColor + '20' }]}>
+                      <Text style={[s.severityBadgeText, { color: sevColor }]}>
+                        {event.severity.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons
+                    name={expanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={colors.text.muted}
+                  />
+                </View>
+
+                {/* Date */}
+                <Text style={s.cardDate}>{formatDate(event.createdAt)}</Text>
+
+                {/* Duration */}
+                {event.durationMinutes != null && (
+                  <Text style={s.duration}>Duration: {event.durationMinutes} min outside zone</Text>
+                )}
+
+                {/* TX hash */}
+                <Text style={s.txHash}>
+                  {event.fabricTxHash
+                    ? truncateTxHash(event.fabricTxHash)
+                    : 'Not yet recorded'}
+                </Text>
+
+                {/* Expanded details */}
+                {expanded && (
+                  <View style={s.expandedSection}>
+                    <View style={s.separator} />
+                    {event.fabricTxHash && (
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Full TX Hash:</Text>
+                        <Text style={s.detailValueMono}>{event.fabricTxHash}</Text>
+                      </View>
+                    )}
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>Coordinates:</Text>
+                      <Text style={s.detailValueMono}>
+                        {event.lat.toFixed(6)}, {event.lng.toFixed(6)}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </ScrollView>
   );
 }
+
+// ── Styles ────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.surface.lowest },
+  scrollContent: { padding: 20, paddingBottom: 40 },
+  centerContainer: {
+    flex: 1,
+    backgroundColor: colors.surface.lowest,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Header
+  headerTitle: { fontSize: 22, fontWeight: '700', color: colors.text.primary, marginBottom: 4 },
+  headerSubtitle: { fontSize: 14, color: colors.text.muted, marginBottom: 20 },
+
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text.primary, marginTop: 16 },
+  emptySubtitle: { fontSize: 13, color: colors.text.muted, marginTop: 4 },
+
+  // Section
+  section: { marginBottom: 28 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.text.secondary,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+
+  // Card
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: radii.lg,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  cardDate: { fontSize: 12, color: colors.text.muted, marginTop: 8 },
+
+  // Type badge (SOS)
+  typeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  typeBadgeText: { fontSize: 12, fontWeight: '600' },
+
+  // Status badge
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeText: { fontSize: 11, fontWeight: '600' },
+
+  // Severity badge (Breach)
+  severityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  severityBadgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+
+  // Breach card
+  breachZoneName: { fontSize: 14, fontWeight: '600', color: colors.text.primary },
+  duration: { fontSize: 12, color: colors.text.muted, marginTop: 4 },
+
+  // TX hash
+  txHash: {
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: colors.text.dim,
+    marginTop: 6,
+  },
+
+  // Expanded section
+  expandedSection: { marginTop: 12 },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border.subtle,
+    marginBottom: 12,
+  },
+  detailRow: { flexDirection: 'row', marginBottom: 8 },
+  detailLabel: { fontSize: 12, color: colors.text.muted, width: 130 },
+  detailValue: { fontSize: 12, color: colors.text.primary, flex: 1, fontWeight: '500' },
+  detailValueMono: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+});

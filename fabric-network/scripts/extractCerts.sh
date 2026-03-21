@@ -11,11 +11,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Load environment variables if .env exists
+if [ -f "${PROJECT_DIR}/.env" ]; then
+  # shellcheck source=/dev/null
+  source "${PROJECT_DIR}/.env"
+fi
+
 # ── Resolve fabric-samples path (try relative, then /tmp symlink) ────────────
 if [ -n "${FABRIC_SAMPLES_DIR:-}" ]; then
   true
 elif [ -d "${PROJECT_DIR}/../fabric-samples" ]; then
   FABRIC_SAMPLES_DIR="$(cd "${PROJECT_DIR}/../fabric-samples" && pwd)"
+elif [ -d "${PROJECT_DIR}/../../fabric-samples" ]; then
+  FABRIC_SAMPLES_DIR="$(cd "${PROJECT_DIR}/../../fabric-samples" && pwd)"
 elif [ -d "/tmp/fabric-samples" ]; then
   FABRIC_SAMPLES_DIR="/tmp/fabric-samples"
 else

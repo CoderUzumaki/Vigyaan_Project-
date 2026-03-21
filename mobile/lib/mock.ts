@@ -8,6 +8,8 @@ import api from './api';
 
 const mock = new MockAdapter(api, { delayResponse: 800 });
 
+// NOTE: KYC submit uses custom 1200ms delay (see below)
+
 // ── Auth mocks ──────────────────────────────────────────────────────────────
 
 mock.onPost('/api/auth/register').reply((config) => {
@@ -236,9 +238,13 @@ mock.onGet('/api/tourist/history').reply(() => {
 });
 
 // ── KYC submit ──────────────────────────────────────────────────────────────
-
+// TODO: Remove mock — connect to real POST /api/kyc/submit
 mock.onPost('/api/kyc/submit').reply(() => {
-  return [200, { ok: true, submissionId: 'mock-sub-' + Date.now() }];
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve([200, { ok: true, submissionId: 'mock-sub-001' }]);
+    }, 400); // Extra 400ms on top of base 800ms = ~1200ms total
+  });
 });
 
 // ── Profile / PIN / Consent ─────────────────────────────────────────────────

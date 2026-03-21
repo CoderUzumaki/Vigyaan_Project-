@@ -163,3 +163,54 @@ export interface ActiveIncident {
   blockchainStatus: 'pending' | 'confirmed';
   fabricTxHash: string | null;
 }
+
+/** GeoJSON zone feature from /api/zones */
+export interface ZoneFeature {
+  type: string;
+  properties: {
+    id: string;
+    name: string;
+    severity: 'green' | 'amber' | 'red';
+    active: boolean;
+  };
+  geometry: {
+    type: string;
+    coordinates: number[][][];
+  };
+}
+
+/** Heatmap zone analytics from /api/services/analytics */
+export interface HeatmapZone {
+  zoneId: string;
+  zoneName: string;
+  incidentCount: number;
+  centroid: { lat: number; lng: number };
+}
+
+/** KYC submission step */
+export type KYCStep = 'instructions' | 'passport_capture' | 'selfie_capture' | 'review' | 'submitted';
+
+/** Extended SOS event with expanded details from history */
+export interface SOSHistoryEvent {
+  id: string;
+  sosType: string;
+  status: string;
+  intentMethod?: string;
+  lat: number;
+  lng: number;
+  createdAt: string;
+  fabricTxHash?: string | null;
+  kycVerifiedAtTime?: boolean;
+}
+
+/** Extended breach event with duration from history */
+export interface BreachHistoryEvent {
+  id: string;
+  zoneName: string;
+  severity: string;
+  lat: number;
+  lng: number;
+  durationMinutes?: number;
+  createdAt: string;
+  fabricTxHash?: string | null;
+}

@@ -1,110 +1,134 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Profile Screen — Identity, PIN, consent, companion sharing, account
-// TODO: Connect to real API for PIN, consent, companion links
+// Profile & Settings — Identity, PIN, consent, companion sharing, sign out
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  ScrollView,
   TouchableOpacity,
   TextInput,
-  ScrollView,
   Switch,
   Alert,
   Share,
+  StyleSheet,
+  Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
-import { useAuth } from '../_layout';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import api from '../../lib/api';
+import { useAuth } from '../_layout';
+import { colors, radii, spacing } from '../../constants/theme';
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user, logout } = useAuth();
   const [showPinSetup, setShowPinSetup] = useState(false);
-  const [newPin, setNewPin] = useState('');
+  const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const [savingPin, setSavingPin] = useState(false);
-  const [insuranceConsent, setInsuranceConsent] = useState(false);
+  const [pinSaving, setPinSaving] = useState(false);
+  const [consentGranted, setConsentGranted] = useState(false);
+  const [consentLoading, setConsentLoading] = useState(false);
+  const [profileData, setProfileData] = useState<any>(null);
 
-  // ── PIN setup ───────────────────────────────────────────────────────────
+  // ── Fetch profile ───────────────────────────────────────────────────────
 
-  async function handleSetPin() {
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+  useEffect(() => {
+    (async () => {
+      try {
+        // TODO: Replace mock with real GET /api/tourist/profile
+        const { data } = await api.get('/api/tourist/profile');
+        setProfileData(data);
+        setConsentGranted(!!data.insuranceConsent);
+      } catch {
+        // silent
+      }
+    })();
+  }, []);
+
+  // ── DID copy ────────────────────────────────────────────────────────────
+
+  async function copyDID() {
+    const did = profileData?.did || user?.did || 'did:fab:tourist:unknown';
+    await Clipboard.setStringAsync(did);
+    Toast.show({ type: 'success', text1: 'DID Copied', text2: 'Full DID copied to clipboard' });
+  }
+
+  // ── PIN Setup ───────────────────────────────────────────────────────────
+
+  async function savePin() {
+    if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
       Toast.show({ type: 'error', text1: 'Invalid PIN', text2: 'PIN must be exactly 4 digits' });
       return;
     }
-    if (newPin !== confirmPin) {
-      Toast.show({ type: 'error', text1: 'PIN mismatch', text2: 'PINs do not match' });
+    if (pin !== confirmPin) {
+      Toast.show({ type: 'error', text1: 'PINs do not match', text2: 'Please enter the same PIN twice' });
       return;
     }
 
-    setSavingPin(true);
+    setPinSaving(true);
     try {
-      // TODO: Replace with real POST /api/tourist/set-pin
-      await api.post('/api/tourist/set-pin', { pin: newPin });
+      // TODO: Replace mock with real POST /api/tourist/set-pin
+      await api.post('/api/tourist/set-pin', { pin });
       Toast.show({ type: 'success', text1: 'PIN Saved', text2: 'Use this for covert SOS activation' });
       setShowPinSetup(false);
-      setNewPin('');
+      setPin('');
       setConfirmPin('');
     } catch {
       Toast.show({ type: 'error', text1: 'Failed', text2: 'Could not save PIN' });
     } finally {
-      setSavingPin(false);
+      setPinSaving(false);
     }
   }
 
-  // ── Consent toggle ──────────────────────────────────────────────────────
+  // ── Insurance Consent ───────────────────────────────────────────────────
 
-  async function handleConsentToggle(value: boolean) {
-    setInsuranceConsent(value);
+  async function toggleConsent(value: boolean) {
+    setConsentLoading(true);
     try {
-      // TODO: Replace with real POST /api/services/consent
-      await api.post('/api/services/consent', { touristId: user?.id, granted: value });
+      // TODO: Replace mock with real POST /api/services/consent
+      await api.post('/api/services/consent', {
+        touristId: user?.id || profileData?.touristId,
+        granted: value,
+      });
+      setConsentGranted(value);
       Toast.show({
-        type: 'info',
-        text1: value ? 'Consent granted' : 'Consent revoked',
-        text2: value ? 'Insurance companies can access your safety data' : 'Data sharing stopped',
+        type: 'success',
+        text1: value ? 'Consent Granted' : 'Consent Revoked',
+        text2: value ? 'Insurance companies can access your records' : 'Access revoked',
       });
     } catch {
-      setInsuranceConsent(!value);
       Toast.show({ type: 'error', text1: 'Failed', text2: 'Could not update consent' });
+    } finally {
+      setConsentLoading(false);
     }
   }
 
   // ── Companion sharing ───────────────────────────────────────────────────
 
-  const companionLink = `https://safetravel.app/track/${user?.id ?? 'unknown'}`;
+  const touristId = user?.id || profileData?.touristId || 'tourist-1';
+  const shareLink = `https://safetravel.app/track/${touristId}`;
 
-  async function copyCompanionLink() {
-    await Clipboard.setStringAsync(companionLink);
-    Toast.show({ type: 'success', text1: 'Copied!', text2: 'Share link copied to clipboard' });
+  async function copyShareLink() {
+    await Clipboard.setStringAsync(shareLink);
+    Toast.show({ type: 'success', text1: 'Link Copied!' });
   }
 
-  async function shareCompanionLink() {
+  async function shareWithCompanions() {
     try {
-      await Share.share({
-        message: `Track my location for safety: ${companionLink}`,
-        title: 'SafeTourism — Share Location',
-      });
+      await Share.share({ message: `Track my location: ${shareLink}`, url: shareLink });
     } catch {
-      // User cancelled share
+      // user cancelled
     }
   }
 
-  // ── Copy DID ────────────────────────────────────────────────────────────
+  // ── Sign out ────────────────────────────────────────────────────────────
 
-  async function copyDID() {
-    if (user?.did) {
-      await Clipboard.setStringAsync(user.did);
-      Toast.show({ type: 'success', text1: 'DID Copied' });
-    }
-  }
-
-  // ── Logout ──────────────────────────────────────────────────────────────
-
-  function handleLogout() {
+  function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -112,329 +136,411 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           await logout();
-          Toast.show({ type: 'info', text1: 'Signed out' });
+          router.replace('/(auth)/login');
         },
       },
     ]);
   }
 
-  // ── KYC status colours ─────────────────────────────────────────────────
+  // ── Derived data ────────────────────────────────────────────────────────
 
-  const kycColors: Record<string, { bg: string; color: string }> = {
-    pending: { bg: '#f59e0b20', color: '#f59e0b' },
-    verified: { bg: '#22c55e20', color: '#22c55e' },
-    rejected: { bg: '#ef444420', color: '#ef4444' },
-  };
-  const kycStyle = kycColors[user?.kycStatus ?? 'pending'];
+  const displayName = profileData?.name || user?.fullName || 'Tourist';
+  const displayEmail = profileData?.email || user?.email || 'test@example.com';
+  const displayDID = profileData?.did || user?.did || 'did:fab:tourist:abc12345';
+  const kycStatus = profileData?.kycStatus || 'pending';
+  const initial = displayName.charAt(0).toUpperCase();
 
-  // ── Section component ───────────────────────────────────────────────────
+  const kycColor =
+    kycStatus === 'verified' ? colors.green : kycStatus === 'rejected' ? colors.red : colors.amber;
 
-  function Section({ children }: { children: React.ReactNode }) {
-    return (
-      <View
-        style={{
-          backgroundColor: '#0f1424',
-          borderRadius: 14,
-          padding: 16,
-          marginBottom: 14,
-          borderWidth: 1,
-          borderColor: '#1e2640',
-        }}
-      >
-        {children}
-      </View>
-    );
-  }
-
-  function SectionHeader({ icon, color, title }: { icon: string; color: string; title: string }) {
-    return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-        <Ionicons name={icon as any} size={18} color={color} />
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#e1e4ea', marginLeft: 8 }}>{title}</Text>
-      </View>
-    );
-  }
+  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#0a0e1a' }} contentContainerStyle={{ padding: 20 }}>
-      {/* ── 1. Identity ───────────────────────────────────────────────── */}
-      <View style={{ marginTop: 50, marginBottom: 20, alignItems: 'center' }}>
-        <View
-          style={{
-            width: 80,
-            height: 80,
-            borderRadius: 40,
-            backgroundColor: '#14b8a620',
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginBottom: 12,
-          }}
-        >
-          <Text style={{ fontSize: 32, color: '#14b8a6', fontWeight: '700' }}>
-            {user?.fullName?.charAt(0)?.toUpperCase() ?? '?'}
-          </Text>
-        </View>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: '#e1e4ea' }}>{user?.fullName ?? 'Tourist'}</Text>
-        <Text style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{user?.email}</Text>
-        <View
-          style={{
-            backgroundColor: kycStyle.bg,
-            borderRadius: 12,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-            marginTop: 8,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: '600',
-              color: kycStyle.color,
-              textTransform: 'uppercase',
-            }}
-          >
-            KYC: {user?.kycStatus}
-          </Text>
-        </View>
-      </View>
-
-      {/* DID Card */}
-      {user?.did && (
-        <Section>
-          <SectionHeader icon="finger-print" color="#8b5cf6" title="Decentralized Identity" />
-          <TouchableOpacity
-            onPress={copyDID}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#1a2035',
-              borderRadius: 8,
-              padding: 12,
-            }}
-          >
-            <Text
-              style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'monospace', flex: 1 }}
-              numberOfLines={1}
-            >
-              {user.did}
-            </Text>
-            <Ionicons name="copy-outline" size={16} color="#64748b" style={{ marginLeft: 8 }} />
-          </TouchableOpacity>
-          <Text style={{ fontSize: 10, color: '#475569', marginTop: 6 }}>Tap to copy full DID</Text>
-        </Section>
-      )}
-
-      {/* ── 2. Emergency PIN ──────────────────────────────────────────── */}
-      <Section>
-        <SectionHeader icon="lock-closed" color="#8b5cf6" title="Covert SOS PIN" />
-        <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 12, lineHeight: 18 }}>
-          Set a 4-digit PIN for silent emergencies. When your phone detects you&apos;re being
-          held still, entering this PIN will trigger a covert SOS.
-        </Text>
-
-        {showPinSetup ? (
-          <View>
-            <TextInput
-              value={newPin}
-              onChangeText={setNewPin}
-              placeholder="New 4-digit PIN"
-              placeholderTextColor="#475569"
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              style={{
-                backgroundColor: '#1a2035',
-                borderWidth: 1,
-                borderColor: '#2d3a5c',
-                borderRadius: 8,
-                padding: 12,
-                color: '#e1e4ea',
-                fontSize: 16,
-                marginBottom: 8,
-                textAlign: 'center',
-                letterSpacing: 8,
-              }}
-            />
-            <TextInput
-              value={confirmPin}
-              onChangeText={setConfirmPin}
-              placeholder="Confirm PIN"
-              placeholderTextColor="#475569"
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              style={{
-                backgroundColor: '#1a2035',
-                borderWidth: 1,
-                borderColor: '#2d3a5c',
-                borderRadius: 8,
-                padding: 12,
-                color: '#e1e4ea',
-                fontSize: 16,
-                marginBottom: 12,
-                textAlign: 'center',
-                letterSpacing: 8,
-              }}
-            />
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity
-                onPress={handleSetPin}
-                disabled={savingPin}
-                style={{
-                  flex: 1,
-                  backgroundColor: '#8b5cf6',
-                  borderRadius: 8,
-                  padding: 12,
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>
-                  {savingPin ? 'Saving...' : 'Save PIN'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowPinSetup(false);
-                  setNewPin('');
-                  setConfirmPin('');
-                }}
-                style={{
-                  flex: 1,
-                  backgroundColor: '#1e2640',
-                  borderRadius: 8,
-                  padding: 12,
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: '#94a3b8', fontWeight: '600', fontSize: 13 }}>Cancel</Text>
-              </TouchableOpacity>
+    <View style={s.mainContainer}>
+      <ScrollView style={s.container} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ── Section 1: Identity ─────────────────────────────────────────── */}
+        <View style={s.profileHeader}>
+          <View style={s.avatarGlow}>
+            <View style={s.avatar}>
+              <Text style={s.avatarText}>{initial}</Text>
             </View>
           </View>
-        ) : (
-          <TouchableOpacity
-            onPress={() => setShowPinSetup(true)}
-            style={{
-              backgroundColor: '#8b5cf620',
-              borderRadius: 8,
-              padding: 12,
-              alignItems: 'center',
-              borderWidth: 1,
-              borderColor: '#8b5cf640',
-            }}
-          >
-            <Text style={{ color: '#8b5cf6', fontWeight: '600', fontSize: 13 }}>Set / Change PIN</Text>
+          <Text style={s.userName}>{displayName}</Text>
+          <Text style={s.userEmail}>{displayEmail}</Text>
+
+          {/* KYC status badge */}
+          <TouchableOpacity onPress={() => router.push('/(app)/kyc')} activeOpacity={0.8}>
+            <View
+              style={[s.kycBadge, { backgroundColor: kycColor + '15', borderColor: kycColor + '40', borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+            >
+              <Text style={[s.kycBadgeText, { color: kycColor }]}>
+                KYC STATUS: {kycStatus.toUpperCase()}
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={kycColor} />
+            </View>
           </TouchableOpacity>
-        )}
-      </Section>
-
-      {/* ── 3. Insurance Consent ──────────────────────────────────────── */}
-      <Section>
-        <SectionHeader icon="shield-checkmark" color="#14b8a6" title="Data Sharing" />
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <View style={{ flex: 1, marginRight: 12 }}>
-            <Text style={{ fontSize: 13, color: '#94a3b8' }}>Insurance data sharing</Text>
-            <Text style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
-              Required for insurance claims after an emergency
-            </Text>
-          </View>
-          <Switch
-            value={insuranceConsent}
-            onValueChange={handleConsentToggle}
-            trackColor={{ false: '#1e2640', true: '#14b8a640' }}
-            thumbColor={insuranceConsent ? '#14b8a6' : '#64748b'}
-          />
         </View>
-      </Section>
 
-      {/* ── 4. Companion Sharing ──────────────────────────────────────── */}
-      <Section>
-        <SectionHeader icon="people" color="#3b82f6" title="Companion Sharing" />
-        <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 12, lineHeight: 18 }}>
-          Share your live location with family or travel companions for added safety.
-        </Text>
+        {/* ── Decentralized Identity ──────────────────────────────────── */}
+        <View style={s.glassCard}>
+          <View style={s.sectionHeader}>
+            <View style={[s.iconWrapper, { backgroundColor: colors.purple + '15' }]}>
+              <Ionicons name="finger-print" size={22} color={colors.purple} />
+            </View>
+            <Text style={s.sectionTitle}>Decentralized Identity</Text>
+          </View>
 
-        <View
-          style={{
-            backgroundColor: '#1a2035',
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-          }}
-        >
-          <Text
-            style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', flex: 1 }}
-            numberOfLines={1}
-          >
-            {companionLink}
+          <TouchableOpacity onPress={copyDID} style={s.didField} activeOpacity={0.7}>
+            <Text style={s.didText} numberOfLines={1}>{displayDID}</Text>
+            <Ionicons name="copy-outline" size={18} color={colors.primary.main} />
+          </TouchableOpacity>
+          <Text style={s.helperText}>Tap to copy full DID</Text>
+        </View>
+
+        {/* ── Section 2: Emergency PIN ────────────────────────────────── */}
+        <View style={s.glassCard}>
+          <View style={s.sectionHeader}>
+            <View style={[s.iconWrapper, { backgroundColor: colors.red + '15' }]}>
+              <Ionicons name="lock-closed" size={22} color={colors.red} />
+            </View>
+            <Text style={s.sectionTitle}>Covert SOS PIN</Text>
+          </View>
+
+          <Text style={s.sectionDesc}>
+            Set a 4-digit PIN for silent emergency activation. When entered, an SOS is triggered
+            without any visible indication on your device.
           </Text>
-          <TouchableOpacity onPress={copyCompanionLink} style={{ marginLeft: 8 }}>
-            <Ionicons name="copy-outline" size={16} color="#64748b" />
-          </TouchableOpacity>
+
+          {!showPinSetup ? (
+            <TouchableOpacity onPress={() => setShowPinSetup(true)} activeOpacity={0.8}>
+              <View style={s.gradientBtn}>
+                <Text style={[s.pinToggleBtnText, { color: colors.red }]}>
+                  {profileData?.hasPinSet ? 'Change Emergency PIN' : 'Set Emergency PIN'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.pinForm}>
+              <View style={s.pinInputRow}>
+                <View style={s.pinInputWrapper}>
+                  <TextInput
+                    style={s.pinInput}
+                    value={pin}
+                    onChangeText={setPin}
+                    placeholder="Enter PIN"
+                    placeholderTextColor={colors.text.dim}
+                    keyboardType="numeric"
+                    secureTextEntry
+                    maxLength={4}
+                  />
+                </View>
+                <View style={s.pinInputWrapper}>
+                  <TextInput
+                    style={s.pinInput}
+                    value={confirmPin}
+                    onChangeText={setConfirmPin}
+                    placeholder="Confirm"
+                    placeholderTextColor={colors.text.dim}
+                    keyboardType="numeric"
+                    secureTextEntry
+                    maxLength={4}
+                  />
+                </View>
+              </View>
+
+              <View style={s.pinActions}>
+                <TouchableOpacity onPress={savePin} disabled={pinSaving} style={{ flex: 1 }} activeOpacity={0.8}>
+                  <View style={s.savePinSolidBtn}>
+                    <Text style={s.savePinBtnText}>{pinSaving ? 'Saving...' : 'Save PIN'}</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowPinSetup(false);
+                    setPin('');
+                    setConfirmPin('');
+                  }}
+                  style={s.cancelPinBtn}
+                >
+                  <Text style={s.cancelPinBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TouchableOpacity
-            onPress={shareCompanionLink}
-            style={{
-              flex: 1,
-              backgroundColor: '#3b82f620',
-              borderRadius: 8,
-              padding: 12,
-              alignItems: 'center',
-              borderWidth: 1,
-              borderColor: '#3b82f640',
-              flexDirection: 'row',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="share-social" size={16} color="#3b82f6" />
-            <Text style={{ color: '#3b82f6', fontWeight: '600', fontSize: 13, marginLeft: 6 }}>
-              Share Link
-            </Text>
-          </TouchableOpacity>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: '#1a2035',
-              borderRadius: 8,
-              padding: 12,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 13, fontWeight: '600', color: '#94a3b8' }}>
-              Active: 2 companions
-            </Text>
+        {/* ── Section 3: Data Sharing ───────────────────────────────── */}
+        <View style={s.glassCard}>
+          <View style={s.sectionHeader}>
+            <View style={[s.iconWrapper, { backgroundColor: colors.primary.main + '15' }]}>
+              <Ionicons name="shield-checkmark" size={22} color={colors.primary.main} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.sectionTitle}>Data & Privacy</Text>
+            </View>
+          </View>
+
+          <View style={s.consentRow}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <Text style={s.consentLabel}>Insurance data sharing</Text>
+              <Text style={s.consentSubtitle}>Automatically share incident data for claims</Text>
+            </View>
+            <Switch
+              value={consentGranted}
+              onValueChange={toggleConsent}
+              disabled={consentLoading}
+              trackColor={{ false: colors.border.medium, true: colors.primary.light }}
+              thumbColor={consentGranted ? colors.primary.main : colors.surface.base}
+            />
           </View>
         </View>
-      </Section>
 
-      {/* ── 5. Account ────────────────────────────────────────────────── */}
-      <TouchableOpacity
-        onPress={handleLogout}
-        style={{
-          backgroundColor: '#ef444415',
-          borderRadius: 14,
-          padding: 16,
-          alignItems: 'center',
-          marginTop: 4,
-          borderWidth: 1,
-          borderColor: '#ef444430',
-        }}
-      >
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#ef4444' }}>Sign Out</Text>
-      </TouchableOpacity>
+        {/* ── Section 4: Companion Sharing ────────────────────────────── */}
+        <View style={s.glassCard}>
+          <View style={s.sectionHeader}>
+            <View style={[s.iconWrapper, { backgroundColor: colors.blue + '15' }]}>
+              <Ionicons name="people" size={22} color={colors.blue} />
+            </View>
+            <Text style={s.sectionTitle}>Companions</Text>
+          </View>
 
-      <View style={{ height: 30 }} />
-    </ScrollView>
+          <Text style={s.sectionDesc}>Share your live tracker link with family or travel companions.</Text>
+
+          <View style={s.linkField}>
+            <Text style={s.linkText} numberOfLines={1}>{shareLink}</Text>
+            <TouchableOpacity onPress={copyShareLink} style={s.copyNode}>
+              <Ionicons name="copy" size={16} color={colors.blue} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.companionActions}>
+            <TouchableOpacity onPress={shareWithCompanions} style={{ flex: 1 }} activeOpacity={0.8}>
+               <View style={s.shareLinkBtn}>
+                <Ionicons name="share-outline" size={18} color={colors.blue} />
+                <Text style={s.shareLinkBtnText}>Share Link</Text>
+              </View>
+            </TouchableOpacity>
+            <View style={s.companionCountBadge}>
+              <View style={s.activeDot} />
+              <Text style={s.companionCountText}>2 Active</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Section 5: Sign Out ─────────────────────────────────────── */}
+        <TouchableOpacity onPress={handleSignOut} activeOpacity={0.7} style={{ marginTop: 16 }}>
+          <View style={s.signOutBtn}>
+            <Ionicons name="log-out-outline" size={20} color={colors.text.secondary} />
+            <Text style={s.signOutText}>Secure Sign Out</Text>
+          </View>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
   );
 }
+
+// ── Styles ────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  mainContainer: { flex: 1, backgroundColor: colors.surface.lowest },
+  container: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 80 },
+
+  // Profile header
+  profileHeader: { alignItems: 'center', marginBottom: 24, marginTop: 16 },
+  avatarGlow: {
+    padding: 4,
+    borderRadius: 50,
+    marginBottom: 16,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primary.container,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: { fontSize: 32, fontWeight: '700', color: colors.primary.main },
+  userName: { fontSize: 24, fontWeight: '700', color: colors.text.primary, letterSpacing: -0.5 },
+  userEmail: { fontSize: 14, color: colors.text.secondary, marginTop: 4 },
+  kycBadge: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 12,
+  },
+  kycBadgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+
+  // Cards
+  glassCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  iconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.text.primary, letterSpacing: -0.2 },
+  sectionDesc: { fontSize: 13, color: colors.text.secondary, lineHeight: 20, marginBottom: 16 },
+  helperText: { fontSize: 12, color: colors.text.dim, marginTop: 8 },
+
+  // DID field
+  didField: {
+    backgroundColor: colors.surface.lowest,
+    borderRadius: 10,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+  },
+  didText: {
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: colors.text.primary,
+    flex: 1,
+  },
+
+  // PIN
+  gradientBtn: {
+    borderRadius: 10,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    backgroundColor: colors.surface.lowest,
+  },
+  pinToggleBtnText: { fontWeight: '600', fontSize: 14 },
+  pinForm: { marginTop: 4 },
+  pinInputRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  pinInputWrapper: {
+    flex: 1,
+    backgroundColor: colors.surface.lowest,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+  },
+  pinInput: {
+    padding: 16,
+    textAlign: 'center',
+    fontSize: 22,
+    letterSpacing: 8,
+    color: colors.text.primary,
+    fontWeight: '700',
+  },
+  pinActions: { flexDirection: 'row', gap: 12 },
+  savePinSolidBtn: {
+    borderRadius: 10,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: colors.red,
+  },
+  savePinBtnText: { color: '#ffffff', fontWeight: '600', fontSize: 15 },
+  cancelPinBtn: {
+    flex: 1,
+    backgroundColor: colors.surface.lowest,
+    borderRadius: 10,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+  },
+  cancelPinBtnText: { color: colors.text.secondary, fontWeight: '600', fontSize: 15 },
+
+  // Consent
+  consentRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface.lowest, padding: 16, borderRadius: 10, borderWidth: 1, borderColor: colors.border.medium },
+  consentLabel: { fontSize: 15, fontWeight: '600', color: colors.text.primary, marginBottom: 4 },
+  consentSubtitle: { fontSize: 13, color: colors.text.secondary },
+
+  // Companion sharing
+  linkField: {
+    backgroundColor: colors.surface.lowest,
+    borderRadius: 10,
+    paddingLeft: 14,
+    paddingRight: 6,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+  },
+  linkText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    flex: 1,
+  },
+  copyNode: {
+    padding: 8,
+    backgroundColor: colors.primary.container,
+    borderRadius: 8,
+  },
+  companionActions: { flexDirection: 'row', gap: 12 },
+  shareLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: colors.surface.lowest,
+  },
+  shareLinkBtnText: { color: colors.blue, fontWeight: '600', fontSize: 14 },
+  companionCountBadge: {
+    flex: 0.8,
+    flexDirection: 'row',
+    backgroundColor: colors.surface.lowest,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.green },
+  companionCountText: { fontSize: 13, color: colors.text.secondary, fontWeight: '600' },
+
+  // Sign out
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  signOutText: { color: colors.text.secondary, fontWeight: '600', fontSize: 15 },
+});
+

@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import Toast from 'react-native-toast-message';
 import api from '../../lib/api';
+import { colors, radii } from '../../constants/theme';
 import type { SosType, IntentMethod, ActiveIncident } from '../../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -95,20 +96,26 @@ export default function SOSScreen() {
 
     let gyroData = { x: 0, y: 0, z: 0 };
     let accelData = { x: 0, y: 0, z: 0 };
+    let gyroSub: any = null;
+    let accelSub: any = null;
 
-    Gyroscope.setUpdateInterval(100);
-    Accelerometer.setUpdateInterval(100);
+    try {
+      Gyroscope.setUpdateInterval(100);
+      Accelerometer.setUpdateInterval(100);
 
-    const gyroSub = Gyroscope.addListener((data) => {
-      gyroData = data;
-    });
-    const accelSub = Accelerometer.addListener((data) => {
-      accelData = data;
-    });
+      gyroSub = Gyroscope.addListener((data) => {
+        gyroData = data;
+      });
+      accelSub = Accelerometer.addListener((data) => {
+        accelData = data;
+      });
+    } catch (e) {
+      console.warn('[SOS] Sensors not available:', e);
+    }
 
     const timeout = setTimeout(() => {
-      gyroSub.remove();
-      accelSub.remove();
+      if (gyroSub) gyroSub.remove();
+      if (accelSub) accelSub.remove();
 
       const isStationary =
         Math.abs(gyroData.x) < 0.1 &&
@@ -127,8 +134,8 @@ export default function SOSScreen() {
 
     return () => {
       clearTimeout(timeout);
-      gyroSub.remove();
-      accelSub.remove();
+      if (gyroSub) gyroSub.remove();
+      if (accelSub) accelSub.remove();
     };
   }, [phase]);
 
@@ -321,11 +328,11 @@ export default function SOSScreen() {
     });
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#ef4444', marginBottom: 8 }}>
+      <View style={{ flex: 1, backgroundColor: colors.surface.lowest, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <Text style={{ fontSize: 22, fontWeight: '700', color: colors.red, marginBottom: 8 }}>
           Emergency SOS
         </Text>
-        <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 48, textAlign: 'center' }}>
+        <Text style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 48, textAlign: 'center' }}>
           Press and hold the button for 3 seconds
         </Text>
 
@@ -349,7 +356,7 @@ export default function SOSScreen() {
               width: 180,
               height: 180,
               borderRadius: 90,
-              backgroundColor: '#ef4444',
+              backgroundColor: colors.red,
               justifyContent: 'center',
               alignItems: 'center',
               shadowColor: '#ef4444',
@@ -389,9 +396,9 @@ export default function SOSScreen() {
   // Gyro check — loading spinner
   if (phase === 'gyro_check') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: colors.surface.lowest, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#14b8a6" />
-        <Text style={{ fontSize: 14, color: '#64748b', marginTop: 16 }}>Verifying intent...</Text>
+        <Text style={{ fontSize: 14, color: colors.text.secondary, marginTop: 16 }}>Verifying intent...</Text>
       </View>
     );
   }
@@ -399,13 +406,13 @@ export default function SOSScreen() {
   // Layer 3: Type selection
   if (phase === 'type_select') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: colors.surface.lowest, justifyContent: 'center', padding: 24 }}>
         <View style={{ alignItems: 'center', marginBottom: 32 }}>
           <Ionicons name="alert-circle" size={40} color="#ef4444" />
-          <Text style={{ fontSize: 20, fontWeight: '700', color: '#ef4444', marginTop: 8 }}>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.red, marginTop: 8 }}>
             Select Emergency Type
           </Text>
-          <Text style={{ fontSize: 13, color: '#64748b', marginTop: 6 }}>
+          <Text style={{ fontSize: 13, color: colors.text.secondary, marginTop: 6 }}>
             Choose the type of help you need
           </Text>
         </View>
@@ -480,7 +487,7 @@ export default function SOSScreen() {
           onPress={resetAll}
           style={{ padding: 12, alignItems: 'center' }}
         >
-          <Text style={{ fontSize: 13, color: '#64748b' }}>← Back</Text>
+          <Text style={{ fontSize: 13, color: colors.text.secondary }}>← Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -526,10 +533,10 @@ export default function SOSScreen() {
             borderColor: '#ef4444',
             opacity: countdownAnim,
           }} />
-          <Text style={{ fontSize: 56, fontWeight: '800', color: '#ef4444' }}>{countdownValue}</Text>
+          <Text style={{ fontSize: 56, fontWeight: '800', color: colors.red }}>{countdownValue}</Text>
         </View>
 
-        <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 40 }}>
+        <Text style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 40 }}>
           Your location will be shared with responders
         </Text>
 
@@ -555,9 +562,9 @@ export default function SOSScreen() {
   // Layer 4: Covert PIN screen (no emergency language)
   if (phase === 'covert_pin') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0f1424', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: colors.surface.base, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <Ionicons name="lock-closed" size={32} color="#94a3b8" style={{ marginBottom: 12 }} />
-        <Text style={{ fontSize: 18, fontWeight: '600', color: '#e1e4ea', marginBottom: 32 }}>
+        <Text style={{ fontSize: 18, fontWeight: '600', color: colors.text.primary, marginBottom: 32 }}>
           Enter PIN
         </Text>
 
@@ -584,13 +591,13 @@ export default function SOSScreen() {
         </Animated.View>
 
         {pinError && (
-          <Text style={{ fontSize: 12, color: '#ef4444', marginBottom: 16 }}>Incorrect PIN</Text>
+          <Text style={{ fontSize: 12, color: colors.red, marginBottom: 16 }}>Incorrect PIN</Text>
         )}
         {!pinError && <View style={{ height: 28 }} />}
 
         {pinAttempts >= 2 && (
           <TouchableOpacity onPress={() => { resetAll(); setPhase('hold'); }} style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 12, color: '#64748b' }}>Use hold instead</Text>
+            <Text style={{ fontSize: 12, color: colors.text.secondary }}>Use hold instead</Text>
           </TouchableOpacity>
         )}
 
@@ -619,13 +626,13 @@ export default function SOSScreen() {
                       justifyContent: 'center',
                       alignItems: 'center',
                       borderWidth: isDelete ? 0 : 1,
-                      borderColor: '#2d3a5c',
+                      borderColor: colors.border.subtle,
                     }}
                   >
                     {isDelete ? (
                       <Ionicons name="backspace-outline" size={22} color="#94a3b8" />
                     ) : (
-                      <Text style={{ fontSize: 22, fontWeight: '500', color: '#e1e4ea' }}>{key}</Text>
+                      <Text style={{ fontSize: 22, fontWeight: '500', color: colors.text.primary }}>{key}</Text>
                     )}
                   </TouchableOpacity>
                 );
@@ -640,12 +647,12 @@ export default function SOSScreen() {
   // Sending state
   if (phase === 'sending') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: colors.surface.lowest, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#ef4444" />
-        <Text style={{ fontSize: 16, color: '#ef4444', marginTop: 16, fontWeight: '600' }}>
+        <Text style={{ fontSize: 16, color: colors.red, marginTop: 16, fontWeight: '600' }}>
           Sending SOS...
         </Text>
-        <Text style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
+        <Text style={{ fontSize: 12, color: colors.text.muted, marginTop: 8 }}>
           Contacting emergency services
         </Text>
       </View>
@@ -660,17 +667,17 @@ export default function SOSScreen() {
       : null;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#1a0505', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: '#fff5f5', padding: 24 }}>
         {/* Header */}
         <View style={{ alignItems: 'center', marginTop: 60, marginBottom: 32 }}>
           <View style={{
             width: 80, height: 80, borderRadius: 40,
-            backgroundColor: '#ef444430',
+            backgroundColor: colors.red + '30',
             justifyContent: 'center', alignItems: 'center', marginBottom: 16,
           }}>
             <Ionicons name="alert-circle" size={48} color="#ef4444" />
           </View>
-          <Text style={{ fontSize: 28, fontWeight: '800', color: '#ef4444', letterSpacing: 1 }}>
+          <Text style={{ fontSize: 28, fontWeight: '800', color: colors.red, letterSpacing: 1 }}>
             SOS CONFIRMED
           </Text>
           <View style={{
@@ -683,21 +690,21 @@ export default function SOSScreen() {
               {typeConf?.label ?? 'Emergency'}
             </Text>
           </View>
-          <Text style={{ fontSize: 14, color: '#ef444480', marginTop: 12 }}>
+          <Text style={{ fontSize: 14, color: colors.red + '80', marginTop: 12 }}>
             Responders have been notified
           </Text>
         </View>
 
         {/* Responder ETA */}
         <View style={{
-          backgroundColor: '#0f1424',
+          backgroundColor: colors.surface.base,
           borderRadius: 14,
           padding: 18,
           marginBottom: 14,
           borderWidth: 1,
-          borderColor: '#1e2640',
+          borderColor: colors.border.medium,
         }}>
-          <Text style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
             Responder Status
           </Text>
           {etaMin ? (
@@ -710,13 +717,13 @@ export default function SOSScreen() {
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <ActivityIndicator size="small" color="#14b8a6" />
-              <Text style={{ fontSize: 14, color: '#94a3b8', marginLeft: 8 }}>
+              <Text style={{ fontSize: 14, color: colors.text.muted, marginLeft: 8 }}>
                 Locating nearest responder...
               </Text>
             </View>
           )}
           {activeIncident.responderStatus && (
-            <Text style={{ fontSize: 12, color: '#64748b', marginTop: 6, textTransform: 'capitalize' }}>
+            <Text style={{ fontSize: 12, color: colors.text.secondary, marginTop: 6, textTransform: 'capitalize' }}>
               Status: {activeIncident.responderStatus}
             </Text>
           )}
@@ -724,14 +731,14 @@ export default function SOSScreen() {
 
         {/* Blockchain status */}
         <View style={{
-          backgroundColor: '#0f1424',
+          backgroundColor: colors.surface.base,
           borderRadius: 14,
           padding: 18,
           marginBottom: 14,
           borderWidth: 1,
-          borderColor: '#1e2640',
+          borderColor: colors.border.medium,
         }}>
-          <Text style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
             Blockchain Record
           </Text>
           {activeIncident.blockchainStatus === 'pending' ? (
@@ -750,7 +757,7 @@ export default function SOSScreen() {
                 </Text>
               </View>
               {activeIncident.fabricTxHash && (
-                <Text style={{ fontSize: 10, color: '#475569', marginTop: 4, fontFamily: 'monospace' }}>
+                <Text style={{ fontSize: 10, color: colors.text.muted, marginTop: 4, fontFamily: 'monospace' }}>
                   TX: {activeIncident.fabricTxHash}
                 </Text>
               )}
@@ -786,7 +793,7 @@ export default function SOSScreen() {
             marginTop: 8,
           }}
         >
-          <Text style={{ fontSize: 13, color: '#64748b' }}>
+          <Text style={{ fontSize: 13, color: colors.text.secondary }}>
             Cancel — this was a mistake
           </Text>
         </TouchableOpacity>
@@ -801,7 +808,7 @@ export default function SOSScreen() {
 
   // Fallback
   return (
-    <View style={{ flex: 1, backgroundColor: '#0a0e1a', justifyContent: 'center', alignItems: 'center' }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface.lowest, justifyContent: 'center', alignItems: 'center' }}>
       <ActivityIndicator size="large" color="#14b8a6" />
     </View>
   );
