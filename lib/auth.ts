@@ -26,10 +26,15 @@ export interface JWTPayload {
   id: string;
   email: string;
   fullName: string;
-  did: string;
   role: 'tourist' | 'admin' | 'service';
-  kycStatus: 'pending' | 'verified' | 'rejected';
-  kycVerified: boolean;
+  // Tourist / service fields
+  did?: string;
+  kycStatus?: 'pending' | 'verified' | 'rejected';
+  kycVerified?: boolean;
+  // Admin-specific fields (populated for tokens from /api/auth/admin/login)
+  username?: string;
+  adminRole?: 'admin' | 'super_admin';
+  permissions?: string[];
 }
 
 export interface AuthUser extends JWTPayload {
