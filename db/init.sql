@@ -141,6 +141,27 @@ CREATE TABLE dispatch_events (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- admins — dedicated admin accounts (separate from tourist/service users)
+-- Permissions are stored as a JSONB array of capability strings.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE admins (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  full_name     TEXT NOT NULL DEFAULT 'no_name_available',
+  username      TEXT NOT NULL UNIQUE,
+  admin_role    TEXT NOT NULL DEFAULT 'admin'
+                  CHECK (admin_role IN ('admin', 'super_admin')),
+  permissions   JSONB NOT NULL DEFAULT '[]'::jsonb,
+  active        BOOLEAN NOT NULL DEFAULT true,
+  last_login_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_admins_email ON admins(email);
+CREATE INDEX idx_admins_active ON admins(active) WHERE active = true;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- service_accounts — insurance companies, tourism boards, government
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE service_accounts (
@@ -175,19 +196,28 @@ CREATE INDEX idx_worker_errors_unresolved ON worker_errors (resolved, failed_at 
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Seed users — passwords hashed with bcrypt (10 rounds)
--- admin@safetourism.gov / Admin@123
--- tourist1@test.com     / Tourist@123
--- tourist2@test.com     / Tourist@123
+-- tourist1@test.com / Tourist@123
+-- tourist2@test.com / Tourist@123
 INSERT INTO tourists (email, password_hash, full_name, did, role, kyc_verified, kyc_status) VALUES
-  ('admin@safetourism.gov',
-   '$2b$10$1tCXNnWaY88b2RPCPOOFIeOW0iWtKupYc4X0IeWjM3rEZQW0I9LbK',
-   'Admin User', 'did:fab:admin:001', 'admin', true, 'verified'),
   ('tourist1@test.com',
    '$2b$10$q0qsdoV0H0.KzDfzRMjGOeAvamPmHP0SEXox1wMpKiKrNHSgv1SG6',
    'Priya Sharma', 'did:fab:tourist:001', 'tourist', true, 'verified'),
   ('tourist2@test.com',
    '$2b$10$q0qsdoV0H0.KzDfzRMjGOeAvamPmHP0SEXox1wMpKiKrNHSgv1SG6',
    'Marco Lenz', 'did:fab:tourist:002', 'tourist', false, 'pending');
+
+-- Seed admins — passwords hashed with bcrypt (10 rounds)
+-- admin@safetourism.gov / Admin@123  (super_admin — full access)
+-- ops@safetourism.gov   / Admin@123  (admin — operational access only)
+INSERT INTO admins (email, password_hash, full_name, username, admin_role, permissions) VALUES
+  ('admin@safetourism.gov',
+   '$2b$10$1tCXNnWaY88b2RPCPOOFIeOW0iWtKupYc4X0IeWjM3rEZQW0I9LbK',
+   'System Administrator', 'sysadmin', 'super_admin',
+   '["manage_tourists","review_kyc","dispatch_responders","manage_zones","view_analytics","manage_admins","resolve_incidents"]'::jsonb),
+  ('ops@safetourism.gov',
+   '$2b$10$1tCXNnWaY88b2RPCPOOFIeOW0iWtKupYc4X0IeWjM3rEZQW0I9LbK',
+   'Operations Manager', 'opsmanager', 'admin',
+   '["dispatch_responders","view_analytics","review_kyc","resolve_incidents"]'::jsonb);
 
 -- Geofence zones around Delhi (stored as GeoJSON in JSONB)
 INSERT INTO geofence_zones (name, severity, boundary) VALUES

@@ -17,14 +17,13 @@ export default function AdminLogin() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Login failed'); return; }
-      if (data.user?.role !== 'admin') { setError('Access denied — admin only'); return; }
       document.cookie = `admin_token=${data.token}; path=/; max-age=${7 * 86400}; samesite=lax`;
       localStorage.setItem('admin_token', data.token);
       router.push('/admin');

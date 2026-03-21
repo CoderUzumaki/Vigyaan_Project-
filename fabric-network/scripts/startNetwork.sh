@@ -10,15 +10,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# ── Resolve fabric-samples path (try relative, then /tmp symlink) ────────────
+# ── Resolve fabric-samples path ──────────────────────────────────────────────
+# Priority: FABRIC_SAMPLES_DIR env > FABRIC_SAMPLES_PATH env >
+#           ../fabric-samples relative > sibling Project dir > /tmp symlink
 if [ -n "${FABRIC_SAMPLES_DIR:-}" ]; then
-  true
+  true  # already set
+elif [ -n "${FABRIC_SAMPLES_PATH:-}" ] && [ -d "${FABRIC_SAMPLES_PATH}" ]; then
+  FABRIC_SAMPLES_DIR="${FABRIC_SAMPLES_PATH}"
 elif [ -d "${PROJECT_DIR}/../fabric-samples" ]; then
   FABRIC_SAMPLES_DIR="$(cd "${PROJECT_DIR}/../fabric-samples" && pwd)"
+elif [ -d "/home/ash/Coding/Web 3/Project/fabric-samples" ]; then
+  FABRIC_SAMPLES_DIR="/home/ash/Coding/Web 3/Project/fabric-samples"
 elif [ -d "/tmp/fabric-samples" ]; then
   FABRIC_SAMPLES_DIR="/tmp/fabric-samples"
 else
-  echo "ERROR: Cannot find fabric-samples. Set FABRIC_SAMPLES_DIR env var."
+  echo "ERROR: Cannot find fabric-samples."
+  echo "  Set FABRIC_SAMPLES_PATH in .env.local, or:"
+  echo "  export FABRIC_SAMPLES_DIR=/path/to/fabric-samples"
   exit 1
 fi
 TEST_NETWORK_DIR="${FABRIC_SAMPLES_DIR}/test-network"
