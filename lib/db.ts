@@ -16,12 +16,15 @@ const globalForPg = globalThis as unknown as { pgPool?: Pool };
 
 export const db: Pool =
   globalForPg.pgPool ??
-  new Pool({
-    connectionString: DATABASE_URL,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-  });
+  (() => {
+    console.log('[lib/db.ts] Creating a new Pool with connectionString:', DATABASE_URL);
+    return new Pool({
+      connectionString: DATABASE_URL,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+  })();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPg.pgPool = db;

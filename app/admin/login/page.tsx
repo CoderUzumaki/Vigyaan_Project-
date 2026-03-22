@@ -23,11 +23,12 @@ export default function AdminLogin() {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
+      console.log(data);
       if (!res.ok) { setError(data.error || 'Login failed'); return; }
       document.cookie = `admin_token=${data.token}; path=/; max-age=${7 * 86400}; samesite=lax`;
       localStorage.setItem('admin_token', data.token);
       router.push('/admin');
-    } catch { setError('Network error'); }
+    } catch (error) { setError('Network error'); }
     finally { setLoading(false); }
   }
 

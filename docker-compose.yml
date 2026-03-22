@@ -17,10 +17,10 @@ services:
   # ── PostgreSQL 15 ──────────────────────────────────────────────────────────
   postgres:
     image: postgres:15
-    pull_policy: never                  # image already present locally
+    # pull_policy: if_not_present (default)
     container_name: tourist-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB:       tourist_safety
       POSTGRES_USER:     postgres
@@ -53,7 +53,7 @@ services:
   # ── Redis 7 (shared with hyperledger.sh worker) ────────────────────────────
   redis:
     image: redis:7-alpine
-    pull_policy: never
+    # pull_policy: if_not_present
     container_name: safety-redis
     ports:
       - "6379:6379"
@@ -77,7 +77,7 @@ services:
   # ── Adminer (DB web UI) ────────────────────────────────────────────────────
   adminer:
     image: adminer
-    pull_policy: never
+    # pull_policy: if_not_present
     container_name: tourist-adminer
     ports:
       - "8080:8080"
