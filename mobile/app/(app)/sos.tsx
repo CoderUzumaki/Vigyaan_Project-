@@ -184,13 +184,9 @@ export default function SOSScreen() {
     setPinError(false);
 
     if (newPin.length === 4) {
-      // TODO: Send PIN to server for bcrypt compare
-      // For now, accept any 4-digit PIN in mock mode
-      setTimeout(() => {
-        // Mock: always accept PIN
-        setSelectedType('police'); // Covert SOS defaults to police
-        confirmSOS('pin');
-      }, 300);
+      // Covert SOS defaults to police — PIN verified server-side via bcrypt
+      setSelectedType('police');
+      confirmSOS('pin', 0, newPin);
     }
   }
 
@@ -211,17 +207,22 @@ export default function SOSScreen() {
 
   // ── confirmSOS ──────────────────────────────────────────────────────────
 
-  async function confirmSOS(method: IntentMethod, retryCount = 0) {
+  async function confirmSOS(method: IntentMethod, retryCount = 0, pin?: string) {
     setPhase('sending');
     const timestamp = new Date().toISOString();
 
     try {
-      // TODO: Replace mock with real API
-      const { data } = await api.post('/api/sos/confirm', {
-        sosType: selectedType || 'other',
-        intentMethod: method,
+      const payload: any = {
+        sosType: selectedType || 'police',
+        intentMethod: method === 'pin' ? 'pin' : 'countdown',
         clientTimestamp: timestamp,
-      });
+      };
+      // Include PIN for covert PIN method (server validates via bcrypt)
+      if (method === 'pin' && pin) {
+        payload.pin = pin;
+      }
+
+      const { data } = await api.post('/api/sos/confirm', payload);
 
       const incident: ActiveIncident = {
         incidentId: data.incidentId,
@@ -238,34 +239,43 @@ export default function SOSScreen() {
       setPhase('active');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // TODO: Replace with real socket events
-      // Mock: simulate blockchain confirmation after 2.5s
-      setTimeout(() => {
-        setActiveIncident((prev) =>
-          prev
-            ? {
-                ...prev,
-                blockchainStatus: 'confirmed',
-                fabricTxHash: 'tx_' + Math.random().toString(36).slice(2, 14),
-              }
-            : prev,
-        );
-        Toast.show({ type: 'success', text1: 'Blockchain', text2: 'SOS recorded on-chain ✓' });
-      }, 2500);
+      // Poll for ETA from nearest service location every 10s
+      fetchETA(data.incidentId);
+      const etaInterval = setInterval(() => fetchETA(data.incidentId), 10000);
 
-      // Mock: simulate responder ETA
-      setTimeout(() => {
-        setActiveIncident((prev) =>
-          prev ? { ...prev, responderEta: 180, responderStatus: 'dispatched' } : prev,
-        );
-      }, 4000);
+      // Auto-mark blockchain as confirmed after backend processes it
+      // (In production this would come via WebSocket, but polling is reliable)
+      setTimeout(async () => {
+        try {
+          const { data: histData } = await api.get('/api/tourist/history');
+          const match = histData.sos?.find((s: any) => s.id === data.incidentId);
+          if (match?.fabricTxHash && match.fabricTxHash !== 'pending') {
+            setActiveIncident((prev) =>
+              prev
+                ? { ...prev, blockchainStatus: 'confirmed', fabricTxHash: match.fabricTxHash }
+                : prev,
+            );
+            Toast.show({ type: 'success', text1: 'Blockchain', text2: 'SOS recorded on-chain ✓' });
+          }
+        } catch { /* silent */ }
+      }, 5000);
+
+      // Store interval so it can be cleared on cancel
+      (globalThis as any).__etaInterval = etaInterval;
     } catch (err: any) {
       if (err?.response?.status === 429) {
         Toast.show({ type: 'error', text1: 'SOS already active', text2: 'A distress signal is already being processed' });
         setPhase('hold');
+      } else if (err?.response?.status === 400 && method === 'pin') {
+        // PIN validation failed on server
+        setPinError(true);
+        setPinAttempts((prev) => prev + 1);
+        triggerPinShake();
+        setPinCode('');
+        setPhase('covert_pin');
       } else if (retryCount < 1) {
         Toast.show({ type: 'info', text1: 'Sending failed', text2: 'Retrying in 3 seconds...' });
-        setTimeout(() => confirmSOS(method, retryCount + 1), 3000);
+        setTimeout(() => confirmSOS(method, retryCount + 1, pin), 3000);
       } else {
         Toast.show({ type: 'error', text1: 'SOS Failed', text2: 'Could not send distress signal' });
         setPhase('hold');
@@ -273,10 +283,36 @@ export default function SOSScreen() {
     }
   }
 
+  // ── Fetch ETA from nearest service location ─────────────────────────────
+
+  async function fetchETA(incidentId: string) {
+    try {
+      const { data } = await api.get(`/api/sos/eta?incidentId=${incidentId}`);
+      if (data.etaSeconds) {
+        setActiveIncident((prev) =>
+          prev
+            ? {
+                ...prev,
+                responderEta: data.etaSeconds,
+                responderStatus: `${data.nearestService?.name ?? 'Nearest unit'} dispatched`,
+              }
+            : prev,
+        );
+      }
+    } catch {
+      // Silent fail — will retry on next interval
+    }
+  }
+
   // ── Cancel SOS ──────────────────────────────────────────────────────────
 
   async function cancelSOS() {
     try {
+      // Clear ETA polling interval
+      if ((globalThis as any).__etaInterval) {
+        clearInterval((globalThis as any).__etaInterval);
+        (globalThis as any).__etaInterval = null;
+      }
       await api.post('/api/sos/cancel', { incidentId: activeIncident?.incidentId });
       Toast.show({ type: 'info', text1: 'SOS Cancelled', text2: 'Marked as false alarm' });
       resetAll();

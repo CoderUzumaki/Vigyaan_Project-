@@ -191,6 +191,21 @@ CREATE TABLE worker_errors (
 );
 CREATE INDEX idx_worker_errors_unresolved ON worker_errors (resolved, failed_at DESC) WHERE resolved = FALSE;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- service_locations — nearby emergency services for ETA calculation
+-- service_type maps to sos_type: police → police, medical → hospital, fire → fire station
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE service_locations (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name          TEXT NOT NULL,
+  service_type  TEXT NOT NULL CHECK (service_type IN ('police','medical','fire')),
+  lat           DECIMAL(9,6) NOT NULL,
+  lng           DECIMAL(9,6) NOT NULL,
+  active        BOOLEAN NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_service_locations_type ON service_locations(service_type) WHERE active = true;
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Seed Data
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -219,14 +234,46 @@ INSERT INTO admins (email, password_hash, full_name, username, admin_role, permi
    'Operations Manager', 'opsmanager', 'admin',
    '["dispatch_responders","view_analytics","review_kyc","resolve_incidents"]'::jsonb);
 
--- Geofence zones around Delhi (stored as GeoJSON in JSONB)
+-- Geofence zones around NIT Raipur / Gudhiyari, Raipur, Chhattisgarh
 INSERT INTO geofence_zones (name, severity, boundary) VALUES
-  ('Main visitor zone', 'green',
-   '{"type":"Polygon","coordinates":[[[77.19,28.60],[77.23,28.60],[77.23,28.63],[77.19,28.63],[77.19,28.60]]]}'),
-  ('Caution perimeter', 'amber',
-   '{"type":"Polygon","coordinates":[[[77.18,28.59],[77.24,28.59],[77.24,28.64],[77.18,28.64],[77.18,28.59]]]}'),
-  ('Restricted northern area', 'red',
-   '{"type":"Polygon","coordinates":[[[77.20,28.64],[77.22,28.64],[77.22,28.66],[77.20,28.66],[77.20,28.64]]]}');
+  ('NIT Raipur Campus Zone', 'green',
+   '{"type":"Polygon","coordinates":[[[81.5990,21.2450],[81.6120,21.2450],[81.6120,21.2540],[81.5990,21.2540],[81.5990,21.2450]]]}'),
+  ('Gudhiyari Caution Zone', 'amber',
+   '{"type":"Polygon","coordinates":[[[81.5900,21.2380],[81.6200,21.2380],[81.6200,21.2600],[81.5900,21.2600],[81.5900,21.2380]]]}'),
+  ('Ring Road Restricted Area', 'red',
+   '{"type":"Polygon","coordinates":[[[81.5850,21.2600],[81.6100,21.2600],[81.6100,21.2750],[81.5850,21.2750],[81.5850,21.2600]]]}');
+
+-- ── Service Locations — Police Stations near NIT Raipur / Gudhiyari ──────────
+INSERT INTO service_locations (name, service_type, lat, lng) VALUES
+  ('Gudhiyari Police Thana',                'police', 21.2470, 81.6020),
+  ('Ram Nagar Police Chowki',               'police', 21.2500, 81.6000),
+  ('Khamtarai Police Station',              'police', 21.2420, 81.6100),
+  ('Telibandha Police Station',             'police', 21.2350, 81.6300),
+  ('Pandri Police Station',                 'police', 21.2300, 81.6200),
+  ('Fafadih Police Station',                'police', 21.2250, 81.6350),
+  ('Civil Lines Police Station',            'police', 21.2400, 81.6350),
+  ('Gole Bazaar Police Station',            'police', 21.2370, 81.6450),
+  ('New Rajendra Nagar Police Station',     'police', 21.2550, 81.5950),
+  ('Tatibandh Police Chowki',               'police', 21.2600, 81.5900);
+
+-- ── Service Locations — Hospitals near NIT Raipur / Gudhiyari ────────────────
+INSERT INTO service_locations (name, service_type, lat, lng) VALUES
+  ('AIIMS Raipur',                          'medical', 21.2460, 81.6050),
+  ('Suyash Hospital (Gudhiyari Rd)',        'medical', 21.2495, 81.6015),
+  ('Pt. JN Memorial Medical College',       'medical', 21.2380, 81.6180),
+  ('Shree Narayana Hospital',               'medical', 21.2430, 81.6120),
+  ('Gayatri Hospital Gudhiyari',            'medical', 21.2510, 81.5980),
+  ('Vivekanand Eye Hospital',               'medical', 21.2480, 81.6035),
+  ('MedLife Super Speciality Hospital',     'medical', 21.2350, 81.6250),
+  ('MMI Hospital Raipur',                   'medical', 21.2520, 81.6350);
+
+-- ── Service Locations — Fire Stations near NIT Raipur / Gudhiyari ────────────
+INSERT INTO service_locations (name, service_type, lat, lng) VALUES
+  ('Tikrapara Fire Station',                'fire', 21.2200, 81.6420),
+  ('Shakti Fire Service Gudhiyari',         'fire', 21.2485, 81.6010),
+  ('Raipur Central Fire Station',           'fire', 21.2350, 81.6350),
+  ('Tatibandh Fire Sub-Station',            'fire', 21.2620, 81.5870),
+  ('Mowa Fire Station',                     'fire', 21.2680, 81.6100);
 
 -- Service account — claims@safetravel.com / Service@123
 INSERT INTO service_accounts (org_name, org_type, email, password_hash) VALUES

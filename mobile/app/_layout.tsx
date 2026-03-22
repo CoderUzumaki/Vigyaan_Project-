@@ -9,8 +9,7 @@ import { View, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import * as Notifications from 'expo-notifications';
 
-// TODO: Remove mock import when connecting to real backend
-import '../lib/mock';
+
 
 import * as authHelpers from '../lib/auth';
 import type { User, AuthContextType } from '../types';
@@ -70,7 +69,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         const { status } = await Notifications.requestPermissionsAsync();
         if (status === 'granted') {
           const pushToken = await Notifications.getExpoPushTokenAsync();
-          // TODO: Replace mock with real POST /api/tourist/register-push
           await api.post('/api/tourist/register-push', { pushToken: pushToken.data });
         }
       } catch (err) {

@@ -12,7 +12,6 @@ export async function register(
   email: string,
   password: string,
 ): Promise<AuthResponse> {
-  // TODO: Remove mock — calls real POST /api/auth/register
   const { data } = await api.post<AuthResponse>('/api/auth/register', {
     fullName,
     email,
@@ -27,7 +26,6 @@ export async function login(
   email: string,
   password: string,
 ): Promise<AuthResponse> {
-  // TODO: Remove mock — calls real POST /api/auth/login
   const { data } = await api.post<AuthResponse>('/api/auth/login', {
     email,
     password,
@@ -41,7 +39,6 @@ export async function getCurrentUser(): Promise<User | null> {
   const token = await getToken();
   if (!token) return null;
   try {
-    // TODO: Remove mock — calls real GET /api/auth/me
     const { data } = await api.get<User>('/api/auth/me');
     return data;
   } catch {

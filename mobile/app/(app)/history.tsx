@@ -34,7 +34,6 @@ export default function HistoryScreen() {
 
   const fetchHistory = useCallback(async () => {
     try {
-      // TODO: Replace mock with real GET /api/tourist/history
       const { data: result } = await api.get('/api/tourist/history');
       setData({
         sosEvents: result.sosEvents || [],

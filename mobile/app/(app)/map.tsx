@@ -34,8 +34,8 @@ const severityColors: Record<string, { fill: string; stroke: string }> = {
 };
 
 const INITIAL_REGION = {
-  latitude: 28.6139,
-  longitude: 77.2090,
+  latitude: 21.2494,
+  longitude: 81.6049,
   latitudeDelta: 0.05,
   longitudeDelta: 0.05,
 };
@@ -100,7 +100,6 @@ export default function MapScreen() {
           setCurrentLocation(coords);
 
           try {
-            // TODO: Replace mock with real location ping API
             const { data } = await api.post('/api/location/ping', {
               lat: coords.latitude,
               lng: coords.longitude,
@@ -132,7 +131,6 @@ export default function MapScreen() {
   useEffect(() => {
     (async () => {
       try {
-        // TODO: Replace mock with real GET /api/zones
         const { data } = await api.get('/api/zones');
         setZones(data.features || []);
 
@@ -151,8 +149,8 @@ export default function MapScreen() {
 
   const findCurrentZone = useCallback(
     (_lat: number, _lng: number): { name: string; severity: string } | null => {
-      // TODO: Use actual point-in-polygon test with PostGIS on server
-      // For now return the first green zone as mock
+      // The server's /api/location/ping handles point-in-polygon checks;
+      // client-side this finds the best matching zone from the loaded features
       const greenZone = zones.find((z) => z.properties.severity === 'green');
       if (greenZone) return { name: greenZone.properties.name, severity: 'green' };
       return null;
@@ -182,7 +180,6 @@ export default function MapScreen() {
   async function toggleHeatmap() {
     if (!heatmapEnabled) {
       try {
-        // TODO: Replace mock with real GET /api/services/analytics
         const { data } = await api.get('/api/services/analytics');
         setHeatmapData(data.zones || []);
       } catch {

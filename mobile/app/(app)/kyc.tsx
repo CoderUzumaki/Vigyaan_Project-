@@ -112,7 +112,6 @@ export default function KYCScreen() {
         type: 'image/jpeg',
       } as any);
 
-      // TODO: Replace mock with real POST /api/kyc/submit
       const { data } = await api.post('/api/kyc/submit', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });

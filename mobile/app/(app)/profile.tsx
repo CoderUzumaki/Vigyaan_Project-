@@ -40,7 +40,6 @@ export default function ProfileScreen() {
   useEffect(() => {
     (async () => {
       try {
-        // TODO: Replace mock with real GET /api/tourist/profile
         const { data } = await api.get('/api/tourist/profile');
         setProfileData(data);
         setConsentGranted(!!data.insuranceConsent);
@@ -72,7 +71,6 @@ export default function ProfileScreen() {
 
     setPinSaving(true);
     try {
-      // TODO: Replace mock with real POST /api/tourist/set-pin
       await api.post('/api/tourist/set-pin', { pin });
       Toast.show({ type: 'success', text1: 'PIN Saved', text2: 'Use this for covert SOS activation' });
       setShowPinSetup(false);
@@ -90,7 +88,6 @@ export default function ProfileScreen() {
   async function toggleConsent(value: boolean) {
     setConsentLoading(true);
     try {
-      // TODO: Replace mock with real POST /api/services/consent
       await api.post('/api/services/consent', {
         touristId: user?.id || profileData?.touristId,
         granted: value,
