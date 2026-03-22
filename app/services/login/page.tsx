@@ -22,6 +22,12 @@ export default function ServicesLogin() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Login failed'); return; }
+      
+      if (data.user?.role !== 'service' && data.user?.role !== 'admin') {
+        setError('Access denied. Tourists must use the mobile app.');
+        return;
+      }
+
       document.cookie = `service_token=${data.token}; path=/; max-age=${7*86400}; samesite=lax`;
       localStorage.setItem('service_token', data.token);
       router.push('/services');

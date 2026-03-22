@@ -28,12 +28,40 @@ export default function AdminMap() {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
   const socketRef = useRef<Socket | null>(null);
+  const geoJsonLayerRef = useRef<any>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [stats, setStats] = useState({ activeSOS: 0, breachesToday: 0, kycPending: 0, responders: 0 });
   const [activeTab, setActiveTab] = useState<'alerts' | 'outside' | 'kyc'>('alerts');
 
   const addAlert = useCallback((alert: AlertItem) => {
     setAlerts((prev) => [alert, ...prev].slice(0, 50));
+  }, []);
+
+  const loadZones = useCallback(() => {
+    if (!mapRef.current) return;
+    const token = localStorage.getItem('admin_token');
+    fetch('/api/zones', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((geoJson) => {
+        if (geoJsonLayerRef.current) {
+          mapRef.current.removeLayer(geoJsonLayerRef.current);
+        }
+        geoJsonLayerRef.current = L.geoJSON(geoJson, {
+          style: (feature: any) => {
+            const sev = feature?.properties?.severity;
+            return {
+              color: sev === 'green' ? '#1D9E75' : sev === 'amber' ? '#BA7517' : '#E24B4A',
+              fillOpacity: 0.12,
+              weight: 2,
+              dashArray: '6 4',
+            };
+          },
+          onEachFeature: (feature: any, layer: any) => {
+            layer.bindPopup(`<b>${feature.properties.name}</b><br>Severity: ${feature.properties.severity}`);
+          },
+        }).addTo(mapRef.current);
+      })
+      .catch(console.error);
   }, []);
 
   // ── Init map ────────────────────────────────────────────────────────────
@@ -48,32 +76,11 @@ export default function AdminMap() {
       maxZoom: 19,
     }).addTo(map);
 
-    // Load zone overlays
-    const token = localStorage.getItem('admin_token');
-    fetch('/api/zones', { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((geoJson) => {
-        L.geoJSON(geoJson, {
-          style: (feature: any) => {
-            const sev = feature?.properties?.severity;
-            return {
-              color: sev === 'green' ? '#1D9E75' : sev === 'amber' ? '#BA7517' : '#E24B4A',
-              fillOpacity: 0.12,
-              weight: 2,
-              dashArray: '6 4',
-            };
-          },
-          onEachFeature: (feature: any, layer: any) => {
-            layer.bindPopup(`<b>${feature.properties.name}</b><br>Severity: ${feature.properties.severity}`);
-          },
-        }).addTo(map);
-      })
-      .catch(console.error);
-
     mapRef.current = map;
+    loadZones();
 
     return () => { map.remove(); mapRef.current = null; };
-  }, []);
+  }, [loadZones]);
 
   // ── Socket.IO connection ────────────────────────────────────────────────
   useEffect(() => {
@@ -114,8 +121,12 @@ export default function AdminMap() {
       setStats((s) => ({ ...s, activeSOS: Math.max(0, s.activeSOS - 1) }));
     });
 
+    socket.on('zone_updated', () => {
+      loadZones();
+    });
+
     return () => { socket.disconnect(); };
-  }, [addAlert]);
+  }, [addAlert, loadZones]);
 
   function addSOSPin(payload: any) {
     if (!mapRef.current || !payload.lat || !payload.lng) return;
@@ -238,9 +249,11 @@ export default function AdminMap() {
                 {new Date(a.timestamp).toLocaleTimeString()}
               </div>
               {a.type === 'sos' && (
-                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                  <button onClick={() => dispatch(a.id, 'medical')} style={{ padding: '4px 8px', fontSize: '10px', borderRadius: '4px', background: '#14b8a620', color: '#14b8a6', border: '1px solid #14b8a640', cursor: 'pointer' }}>Dispatch</button>
-                  <button onClick={() => resolve(a.id)} style={{ padding: '4px 8px', fontSize: '10px', borderRadius: '4px', background: '#64748b20', color: '#94a3b8', border: '1px solid #64748b40', cursor: 'pointer' }}>Resolve</button>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                  <button onClick={() => dispatch(a.id, 'police')} style={{ padding: '4px 8px', fontSize: '10px', borderRadius: '4px', background: '#3b82f620', color: '#3b82f6', border: '1px solid #3b82f640', cursor: 'pointer' }}>👮 Police</button>
+                  <button onClick={() => dispatch(a.id, 'fire')} style={{ padding: '4px 8px', fontSize: '10px', borderRadius: '4px', background: '#ef444420', color: '#ef4444', border: '1px solid #ef444440', cursor: 'pointer' }}>🚒 Fire</button>
+                  <button onClick={() => dispatch(a.id, 'medical')} style={{ padding: '4px 8px', fontSize: '10px', borderRadius: '4px', background: '#14b8a620', color: '#14b8a6', border: '1px solid #14b8a640', cursor: 'pointer' }}>🚑 Medical</button>
+                  <button onClick={() => resolve(a.id)} style={{ padding: '4px 8px', fontSize: '10px', borderRadius: '4px', background: '#64748b20', color: '#94a3b8', border: '1px solid #64748b40', cursor: 'pointer' }}>✓ Resolve</button>
                 </div>
               )}
             </div>

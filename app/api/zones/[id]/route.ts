@@ -6,6 +6,8 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { requireRole, forbidden, badRequest, success } from '@/lib/auth';
+import { createClient } from 'redis';
+import { config } from '@/lib/config';
 
 const VALID_SEVERITIES = ['green', 'amber', 'red'];
 
@@ -67,6 +69,15 @@ export async function PUT(
       return badRequest('Zone not found');
     }
 
+    try {
+      const pubClient = createClient({ url: config.redisUrl });
+      await pubClient.connect();
+      await pubClient.publish('zone:updated', JSON.stringify({ action: 'update', zoneId: id }));
+      await pubClient.quit();
+    } catch (err) {
+      console.error('[/api/zones/[id] Redis] Publish failed:', err);
+    }
+
     return success({ ok: true });
   } catch (error) {
     console.error('[/api/zones/[id] PUT] Error:', error);
@@ -95,6 +106,15 @@ export async function DELETE(
 
     if (result.rows.length === 0) {
       return badRequest('Zone not found or already deactivated');
+    }
+
+    try {
+      const pubClient = createClient({ url: config.redisUrl });
+      await pubClient.connect();
+      await pubClient.publish('zone:updated', JSON.stringify({ action: 'delete', zoneId: id }));
+      await pubClient.quit();
+    } catch (err) {
+      console.error('[/api/zones/[id] Redis] Publish failed:', err);
     }
 
     return success({ ok: true });
