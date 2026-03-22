@@ -7,6 +7,8 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requireRole, unauthorized, forbidden, badRequest, success } from '@/lib/auth';
 import { getZonesAsGeoJSON } from '@/lib/geofence';
+import { createClient } from 'redis';
+import { config } from '@/lib/config';
 
 const VALID_SEVERITIES = ['green', 'amber', 'red'];
 
@@ -66,6 +68,15 @@ export async function POST(req: NextRequest) {
        RETURNING id`,
       [name.trim(), severity, JSON.stringify(boundary), admin.id],
     );
+
+    try {
+      const pubClient = createClient({ url: config.redisUrl });
+      await pubClient.connect();
+      await pubClient.publish('zone:updated', JSON.stringify({ action: 'create', zoneId: result.rows[0].id }));
+      await pubClient.quit();
+    } catch (err) {
+      console.error('[/api/zones Redis] Publish failed:', err);
+    }
 
     return success({ ok: true, zoneId: result.rows[0].id }, 201);
   } catch (error) {

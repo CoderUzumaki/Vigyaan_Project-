@@ -209,6 +209,12 @@ app.prepare().then(async () => {
       } catch { /* ignore */ }
     });
 
+    await subscriber.subscribe('zone:updated', (msg) => {
+      try {
+        io.to('admin').emit('zone_updated', JSON.parse(msg));
+      } catch { /* ignore */ }
+    });
+
     await subscriber.subscribe('sos:confirmed', (msg) => {
       try {
         const data = JSON.parse(msg);
